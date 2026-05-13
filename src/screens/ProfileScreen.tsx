@@ -7,9 +7,16 @@ import {
   Image,
   TouchableOpacity,
   Switch,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '../theme';
 import { mockUser, mockStamps, mockPosts } from '../data/mockData';
 import GlassCard from '../components/GlassCard';
@@ -34,17 +41,71 @@ const BADGE_COLORS = [
 ];
 
 export default function ProfileScreen() {
-  const { user: loggedInUser } = useUser();
+  const { user: loggedInUser, setUser } = useUser();
   const user = mockUser;
   const [privateProfile, setPrivateProfile] = useState(user.privateProfile);
   const [hideLocation, setHideLocation] = useState(user.hideExactLocation);
   const [defaultDelay, setDefaultDelay] = useState<PostDelay>(user.defaultDelayedPosting);
   const [showDelayPicker, setShowDelayPicker] = useState(false);
 
+  // Edit profile modal
+  const [showEdit, setShowEdit] = useState(false);
+  const [editBio, setEditBio] = useState(loggedInUser?.bio ?? '');
+  const [editAvatar, setEditAvatar] = useState(loggedInUser?.avatarUri ?? null);
+
   const displayName = loggedInUser?.name || user.displayName;
   const username = loggedInUser?.username || user.username;
   const bio = loggedInUser?.bio || user.bio;
   const avatarUri = loggedInUser?.avatarUri || user.avatar;
+
+  const openEdit = () => {
+    setEditBio(loggedInUser?.bio ?? '');
+    setEditAvatar(loggedInUser?.avatarUri ?? null);
+    setShowEdit(true);
+  };
+
+  const pickAvatar = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access in your device settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setEditAvatar(result.assets[0].uri);
+    }
+  };
+
+  const takeAvatar = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (perm.status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow camera access in your device settings.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setEditAvatar(result.assets[0].uri);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!loggedInUser) return;
+    const updated = { ...loggedInUser, bio: editBio.trim(), avatarUri: editAvatar };
+    setUser(updated);
+    try {
+      await AsyncStorage.setItem(`user_${loggedInUser.email}`, JSON.stringify(updated));
+    } catch (_) {}
+    setShowEdit(false);
+  };
 
   const savedPosts = mockPosts.filter((p) => user.savedPosts.includes(p.id));
 
@@ -79,6 +140,11 @@ export default function ProfileScreen() {
           <Text style={styles.displayName}>{displayName}</Text>
           <Text style={styles.username}>@{username}</Text>
           {!!bio && <Text style={styles.bio}>{bio}</Text>}
+
+          {/* Edit Profile button */}
+          <TouchableOpacity style={styles.editBtn} onPress={openEdit}>
+            <Text style={styles.editBtnText}>✏️  Edit Profile</Text>
+          </TouchableOpacity>
 
           {/* Stats row */}
           <View style={styles.statsRow}>
@@ -209,6 +275,60 @@ export default function ProfileScreen() {
 
         <View style={{ height: theme.spacing.xxl }} />
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal visible={showEdit} animationType="slide" transparent onRequestClose={() => setShowEdit(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.editOverlay}>
+          <View style={styles.editSheet}>
+            <View style={styles.editHeader}>
+              <TouchableOpacity onPress={() => setShowEdit(false)}>
+                <Text style={styles.editCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.editTitle}>Edit Profile</Text>
+              <TouchableOpacity onPress={saveProfile}>
+                <Text style={styles.editSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Avatar picker */}
+            <View style={styles.editAvatarSection}>
+              {editAvatar ? (
+                <Image source={{ uri: editAvatar }} style={styles.editAvatar} />
+              ) : (
+                <LinearGradient
+                  colors={[theme.colors.primary, theme.colors.accent]}
+                  style={[styles.editAvatar, styles.editAvatarFallback]}
+                >
+                  <Text style={styles.editAvatarInitial}>{displayName[0]?.toUpperCase()}</Text>
+                </LinearGradient>
+              )}
+              <View style={styles.editAvatarBtns}>
+                <TouchableOpacity style={styles.editAvatarBtn} onPress={pickAvatar}>
+                  <Text style={styles.editAvatarBtnText}>📷  Choose Photo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.editAvatarBtn} onPress={takeAvatar}>
+                  <Text style={styles.editAvatarBtnText}>📸  Take Photo</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Bio */}
+            <View style={styles.editBioSection}>
+              <Text style={styles.editLabel}>Bio</Text>
+              <TextInput
+                style={styles.editBioInput}
+                value={editBio}
+                onChangeText={(t) => setEditBio(t.slice(0, 150))}
+                placeholder="Tell the world about your travels…"
+                placeholderTextColor={theme.colors.textMuted}
+                multiline
+                maxLength={150}
+              />
+              <Text style={styles.editCharCount}>{editBio.length}/150</Text>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -459,5 +579,124 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontSize: 16,
     fontWeight: '700',
+  },
+  editBtn: {
+    alignSelf: 'center',
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: 8,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.lg,
+  },
+  editBtnText: {
+    color: theme.colors.primaryLight,
+    ...theme.typography.caption,
+    fontWeight: '700',
+  },
+  editOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  editSheet: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 40,
+    borderTopWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  editHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  editTitle: {
+    color: theme.colors.text,
+    ...theme.typography.h3,
+  },
+  editCancel: {
+    color: theme.colors.textMuted,
+    ...theme.typography.body,
+  },
+  editSave: {
+    color: theme.colors.primary,
+    ...theme.typography.body,
+    fontWeight: '700',
+  },
+  editAvatarSection: {
+    alignItems: 'center',
+    paddingVertical: theme.spacing.lg,
+    gap: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  editAvatar: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: theme.colors.primary,
+  },
+  editAvatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editAvatarInitial: {
+    color: '#fff',
+    fontSize: 36,
+    fontWeight: '800',
+  },
+  editAvatarBtns: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  editAvatarBtn: {
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 8,
+  },
+  editAvatarBtnText: {
+    color: theme.colors.textSecondary,
+    ...theme.typography.caption,
+    fontWeight: '600',
+  },
+  editBioSection: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+  },
+  editLabel: {
+    color: theme.colors.textMuted,
+    ...theme.typography.caption,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: theme.spacing.sm,
+  },
+  editBioInput: {
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    color: theme.colors.text,
+    ...theme.typography.body,
+    padding: theme.spacing.sm,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  editCharCount: {
+    color: theme.colors.textMuted,
+    ...theme.typography.tiny,
+    textAlign: 'right',
+    marginTop: 4,
   },
 });
