@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 import { mockUser, mockStamps, mockPosts } from '../data/mockData';
 import GlassCard from '../components/GlassCard';
+import { useUser } from '../context/UserContext';
 import { PostDelay } from '../types';
 
 const DELAY_LABELS: Record<PostDelay, string> = {
@@ -33,11 +34,17 @@ const BADGE_COLORS = [
 ];
 
 export default function ProfileScreen() {
+  const { user: loggedInUser } = useUser();
   const user = mockUser;
   const [privateProfile, setPrivateProfile] = useState(user.privateProfile);
   const [hideLocation, setHideLocation] = useState(user.hideExactLocation);
   const [defaultDelay, setDefaultDelay] = useState<PostDelay>(user.defaultDelayedPosting);
   const [showDelayPicker, setShowDelayPicker] = useState(false);
+
+  const displayName = loggedInUser?.name || user.displayName;
+  const username = loggedInUser?.username || user.username;
+  const bio = loggedInUser?.bio || user.bio;
+  const avatarUri = loggedInUser?.avatarUri || user.avatar;
 
   const savedPosts = mockPosts.filter((p) => user.savedPosts.includes(p.id));
 
@@ -53,16 +60,25 @@ export default function ProfileScreen() {
           style={styles.heroBanner}
         >
           <View style={styles.avatarWrapper}>
-            <Image source={{ uri: user.avatar }} style={styles.avatar} />
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatar} />
+            ) : (
+              <LinearGradient
+                colors={[theme.colors.primary, theme.colors.accent]}
+                style={[styles.avatar, styles.avatarFallback]}
+              >
+                <Text style={styles.avatarInitial}>{displayName[0]?.toUpperCase()}</Text>
+              </LinearGradient>
+            )}
             <View style={styles.avatarBorder} />
           </View>
         </LinearGradient>
 
         <View style={styles.profileContent}>
           {/* Identity */}
-          <Text style={styles.displayName}>{user.displayName}</Text>
-          <Text style={styles.username}>@{user.username}</Text>
-          <Text style={styles.bio}>{user.bio}</Text>
+          <Text style={styles.displayName}>{displayName}</Text>
+          <Text style={styles.username}>@{username}</Text>
+          {!!bio && <Text style={styles.bio}>{bio}</Text>}
 
           {/* Stats row */}
           <View style={styles.statsRow}>
@@ -229,6 +245,15 @@ const styles = StyleSheet.create({
     borderRadius: 47,
     borderWidth: 2,
     borderColor: theme.colors.primary,
+  },
+  avatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: '#fff',
+    fontSize: 36,
+    fontWeight: '800',
   },
   profileContent: {
     marginTop: 56,

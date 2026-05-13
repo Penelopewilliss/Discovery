@@ -25,7 +25,7 @@ const INTERESTS = [
 type Props = {
   name: string;
   username: string;
-  onComplete: () => void;
+  onComplete: (data: { avatarUri: string | null; bio: string; homeCountry: string; interests: string[] }) => void;
 };
 
 export default function ProfileSetupScreen({ name, username, onComplete }: Props) {
@@ -74,7 +74,7 @@ export default function ProfileSetupScreen({ name, username, onComplete }: Props
       Alert.alert('Pick your interests', 'Select at least one travel interest.');
       return;
     }
-    onComplete();
+    onComplete({ avatarUri, bio, homeCountry, interests: selectedInterests });
   };
 
   const firstLetter = name ? name[0].toUpperCase() : 'T';
@@ -194,7 +194,7 @@ export default function ProfileSetupScreen({ name, username, onComplete }: Props
               </LinearGradient>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={onComplete} style={styles.skipBtn}>
+            <TouchableOpacity onPress={onComplete.bind(null, { avatarUri, bio, homeCountry, interests: selectedInterests })} style={styles.skipBtn}>
               <Text style={styles.skipText}>Skip for now</Text>
             </TouchableOpacity>
 

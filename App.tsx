@@ -13,6 +13,7 @@ import WelcomeScreen from './src/screens/WelcomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import ProfileSetupScreen from './src/screens/ProfileSetupScreen';
+import { UserProvider, useUser } from './src/context/UserContext';
 
 type AuthState = 'welcome' | 'login' | 'signup' | 'setup' | 'app';
 
@@ -67,63 +68,85 @@ function MainScreen({ name }: { name: string }) {
 }
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <UserProvider>
+        <AppNavigator />
+      </UserProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function AppNavigator() {
+  const { setUser } = useUser();
   const [authState, setAuthState] = useState<AuthState>('welcome');
   const [activeTab, setActiveTab] = useState('Home');
   const [signUpData, setSignUpData] = useState({ name: '', username: '', email: '' });
 
   if (authState === 'welcome') {
     return (
-      <SafeAreaProvider>
+      <>
         <StatusBar style="light" />
         <WelcomeScreen
           onGetStarted={() => setAuthState('signup')}
           onLogin={() => setAuthState('login')}
         />
-      </SafeAreaProvider>
+      </>
     );
   }
 
   if (authState === 'login') {
     return (
-      <SafeAreaProvider>
+      <>
         <StatusBar style="light" />
         <LoginScreen
           onLogin={() => setAuthState('app')}
           onBack={() => setAuthState('welcome')}
           onSignUp={() => setAuthState('signup')}
         />
-      </SafeAreaProvider>
+      </>
     );
   }
 
   if (authState === 'signup') {
     return (
-      <SafeAreaProvider>
+      <>
         <StatusBar style="light" />
         <SignUpScreen
           onNext={(data) => { setSignUpData(data); setAuthState('setup'); }}
           onBack={() => setAuthState('welcome')}
           onLogin={() => setAuthState('login')}
         />
-      </SafeAreaProvider>
+      </>
     );
   }
 
   if (authState === 'setup') {
     return (
-      <SafeAreaProvider>
+      <>
         <StatusBar style="light" />
         <ProfileSetupScreen
           name={signUpData.name}
           username={signUpData.username}
-          onComplete={() => setAuthState('app')}
+          onComplete={(setupData) => {
+            setUser({
+              name: signUpData.name,
+              username: signUpData.username,
+              email: signUpData.email,
+              avatarUri: setupData.avatarUri,
+              bio: setupData.bio,
+              homeCountry: setupData.homeCountry,
+              interests: setupData.interests,
+            });
+            setAuthState('app');
+          }}
         />
-      </SafeAreaProvider>
+      </>
     );
   }
 
   return (
-    <SafeAreaProvider>
+    <>
       <StatusBar style="light" />
       <View style={styles.root}>
         <TopBar active={activeTab} onSelect={setActiveTab} />
@@ -131,7 +154,7 @@ export default function App() {
           <MainScreen name={activeTab} />
         </View>
       </View>
-    </SafeAreaProvider>
+    </>
   );
 }
 
