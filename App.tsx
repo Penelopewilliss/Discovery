@@ -14,15 +14,14 @@ import WelcomeScreen from './src/screens/WelcomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import ProfileSetupScreen from './src/screens/ProfileSetupScreen';
-import { UserProvider, useUser } from './src/context/UserContext';
-
-type AuthState = 'welcome' | 'login' | 'signup' | 'setup' | 'app';
+import MessagesScreen from './src/screens/MessagesScreen'; = 'welcome' | 'login' | 'signup' | 'setup' | 'app';
 
 const TABS = [
   { name: 'Home', emoji: '🏠' },
   { name: 'Explore', emoji: '🔍' },
   { name: 'Create', emoji: '✈️' },
   { name: 'Groups', emoji: '👥' },
+  { name: 'Messages', emoji: '💬' },
   { name: 'Profile', emoji: '👤' },
 ];
 
@@ -63,6 +62,7 @@ function MainScreen({ name }: { name: string }) {
     case 'Explore': return <ExploreScreen />;
     case 'Create': return <CreatePostScreen />;
     case 'Groups': return <GroupsScreen />;
+    case 'Messages': return <MessagesScreen />;
     case 'Profile': return <ProfileScreen />;
     default: return <HomeScreen />;
   }

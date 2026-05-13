@@ -1,4 +1,4 @@
-import { Post, Place, Group, User, Stamp, Comment } from '../types';
+import { Post, Place, Group, User, Stamp, Comment, Conversation, ChatMessage } from '../types';
 
 export const mockUser: User = {
   id: 'user_1',
@@ -537,6 +537,140 @@ export function addGroup(group: Omit<Group, 'id'>): Group {
   groupCounter += 1;
   const newGroup: Group = { ...group, id: `group_custom_${groupCounter}` };
   mockGroups.push(newGroup);
+  // Auto-create a group conversation for new groups
+  if (newGroup.createdByMe) {
+    mockConversations.push({
+      id: `conv_${newGroup.id}`,
+      type: 'group',
+      groupId: newGroup.id,
+      groupName: newGroup.name,
+      groupCover: newGroup.coverImage,
+      locationSharingEnabled: newGroup.locationSharingEnabled ?? false,
+      lastMessage: 'Group created',
+      lastMessageAt: new Date().toISOString(),
+      unreadCount: 0,
+    });
+  }
   return newGroup;
+}
+
+// ── Conversations & Chat ───────────────────────────────────────────────────
+
+export let mockConversations: Conversation[] = [
+  {
+    id: 'conv_dm_1',
+    type: 'dm',
+    otherUserId: 'user_2',
+    otherUsername: 'nomad.lena',
+    otherAvatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&q=80',
+    lastMessage: 'Are you going to Lisbon this summer? 🌞',
+    lastMessageAt: '2026-05-13T10:22:00Z',
+    unreadCount: 2,
+  },
+  {
+    id: 'conv_dm_2',
+    type: 'dm',
+    otherUserId: 'user_3',
+    otherUsername: 'kai.wanderlust',
+    otherAvatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&q=80',
+    lastMessage: 'That Tokyo tip was 🔥 thanks!',
+    lastMessageAt: '2026-05-12T18:05:00Z',
+    unreadCount: 0,
+  },
+  {
+    id: 'conv_group_1',
+    type: 'group',
+    groupId: 'group_1',
+    groupName: 'Backpackers Europe',
+    groupCover: 'https://images.unsplash.com/photo-1467269204594-9661b134dd2b?w=600&q=80',
+    locationSharingEnabled: false,
+    lastMessage: 'Anyone in Prague next week?',
+    lastMessageAt: '2026-05-13T09:00:00Z',
+    unreadCount: 5,
+  },
+  {
+    id: 'conv_group_6',
+    type: 'group',
+    groupId: 'group_6',
+    groupName: 'My Summer Trip 🌞',
+    groupCover: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80',
+    locationSharingEnabled: true,
+    lastMessage: 'I just landed in Split! 📍',
+    lastMessageAt: '2026-05-13T11:30:00Z',
+    unreadCount: 1,
+  },
+];
+
+export let mockChatMessages: Record<string, ChatMessage[]> = {
+  conv_dm_1: [
+    { id: 'm1', conversationId: 'conv_dm_1', senderId: 'user_2', senderUsername: 'nomad.lena', senderAvatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&q=80', text: 'Hey! Loved your Albania post 😍', createdAt: '2026-05-13T10:18:00Z' },
+    { id: 'm2', conversationId: 'conv_dm_1', senderId: 'user_1', senderUsername: 'aurora.travels', senderAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80', text: 'Thank you!! Ksamil is unreal 🏖️', createdAt: '2026-05-13T10:20:00Z' },
+    { id: 'm3', conversationId: 'conv_dm_1', senderId: 'user_2', senderUsername: 'nomad.lena', senderAvatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&q=80', text: 'Are you going to Lisbon this summer? 🌞', createdAt: '2026-05-13T10:22:00Z' },
+  ],
+  conv_dm_2: [
+    { id: 'm4', conversationId: 'conv_dm_2', senderId: 'user_1', senderUsername: 'aurora.travels', senderAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80', text: 'You have to try the ramen in Shinjuku, not the tourist ones', createdAt: '2026-05-12T17:58:00Z' },
+    { id: 'm5', conversationId: 'conv_dm_2', senderId: 'user_3', senderUsername: 'kai.wanderlust', senderAvatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&q=80', text: 'That Tokyo tip was 🔥 thanks!', createdAt: '2026-05-12T18:05:00Z' },
+  ],
+  conv_group_1: [
+    { id: 'm6', conversationId: 'conv_group_1', senderId: 'user_4', senderUsername: 'marco.escapes', senderAvatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&q=80', text: 'Just crossed into Austria 🇦🇹', createdAt: '2026-05-13T08:45:00Z' },
+    { id: 'm7', conversationId: 'conv_group_1', senderId: 'user_5', senderUsername: 'luna.offpath', senderAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&q=80', text: 'Anyone in Prague next week?', createdAt: '2026-05-13T09:00:00Z' },
+  ],
+  conv_group_6: [
+    { id: 'm8', conversationId: 'conv_group_6', senderId: 'user_2', senderUsername: 'nomad.lena', senderAvatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&q=80', text: 'Flight delayed by 2h 😩', createdAt: '2026-05-13T10:00:00Z' },
+    { id: 'm9', conversationId: 'conv_group_6', senderId: 'user_3', senderUsername: 'kai.wanderlust', senderAvatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&q=80', text: 'I just landed in Split! 📍', createdAt: '2026-05-13T11:30:00Z' },
+  ],
+};
+
+let msgCounter = 200;
+
+export function getMessages(conversationId: string): ChatMessage[] {
+  return mockChatMessages[conversationId] ?? [];
+}
+
+export function sendMessage(conversationId: string, text: string, sender: { id: string; username: string; avatar: string }): ChatMessage {
+  msgCounter += 1;
+  const msg: ChatMessage = {
+    id: `msg_${msgCounter}`,
+    conversationId,
+    senderId: sender.id,
+    senderUsername: sender.username,
+    senderAvatar: sender.avatar,
+    text,
+    createdAt: new Date().toISOString(),
+  };
+  if (!mockChatMessages[conversationId]) mockChatMessages[conversationId] = [];
+  mockChatMessages[conversationId] = [...mockChatMessages[conversationId], msg];
+  // Update last message in conversation
+  const conv = mockConversations.find((c) => c.id === conversationId);
+  if (conv) {
+    conv.lastMessage = text;
+    conv.lastMessageAt = msg.createdAt;
+    conv.unreadCount = 0;
+  }
+  return msg;
+}
+
+export function startDM(otherUserId: string, otherUsername: string, otherAvatar: string): Conversation {
+  const existing = mockConversations.find(
+    (c) => c.type === 'dm' && c.otherUserId === otherUserId
+  );
+  if (existing) return existing;
+  const conv: Conversation = {
+    id: `conv_dm_${otherUserId}`,
+    type: 'dm',
+    otherUserId,
+    otherUsername,
+    otherAvatar,
+    lastMessage: undefined,
+    lastMessageAt: new Date().toISOString(),
+    unreadCount: 0,
+  };
+  mockConversations = [conv, ...mockConversations];
+  return conv;
+}
+
+export function toggleLocationSharing(conversationId: string): void {
+  const conv = mockConversations.find((c) => c.id === conversationId);
+  if (conv) conv.locationSharingEnabled = !conv.locationSharingEnabled;
 }
 

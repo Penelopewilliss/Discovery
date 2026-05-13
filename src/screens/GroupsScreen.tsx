@@ -28,6 +28,7 @@ export default function GroupsScreen() {
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newPrivate, setNewPrivate] = useState(false);
+  const [newLocationSharing, setNewLocationSharing] = useState(false);
 
   const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
 
@@ -59,10 +60,12 @@ export default function GroupsScreen() {
       joined: true,
       requested: false,
       createdByMe: true,
+      locationSharingEnabled: newLocationSharing,
     });
     setNewName('');
     setNewDesc('');
     setNewPrivate(false);
+    setNewLocationSharing(false);
     setShowCreate(false);
     forceUpdate();
   };
@@ -120,6 +123,19 @@ export default function GroupsScreen() {
               <Switch
                 value={newPrivate}
                 onValueChange={setNewPrivate}
+                trackColor={{ false: theme.colors.border, true: theme.colors.gradientPrimary[0] }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            <View style={[styles.privateRow, { marginTop: theme.spacing.sm }]}>
+              <View>
+                <Text style={styles.createLabel}>📍 Location Sharing</Text>
+                <Text style={styles.privateHint}>Members can share & see each other's location</Text>
+              </View>
+              <Switch
+                value={newLocationSharing}
+                onValueChange={setNewLocationSharing}
                 trackColor={{ false: theme.colors.border, true: theme.colors.gradientPrimary[0] }}
                 thumbColor="#fff"
               />

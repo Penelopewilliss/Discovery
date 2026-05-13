@@ -101,6 +101,37 @@ export interface Group {
   joined: boolean;
   requested: boolean;
   createdByMe?: boolean;
+  locationSharingEnabled?: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderUsername: string;
+  senderAvatar: string;
+  text: string;
+  createdAt: string;
+}
+
+export type ConversationType = 'dm' | 'group';
+
+export interface Conversation {
+  id: string;
+  type: ConversationType;
+  // DM fields
+  otherUserId?: string;
+  otherUsername?: string;
+  otherAvatar?: string;
+  // Group fields
+  groupId?: string;
+  groupName?: string;
+  groupCover?: string;
+  locationSharingEnabled?: boolean;
+  // Shared
+  lastMessage?: string;
+  lastMessageAt?: string;
+  unreadCount: number;
 }
 
 export interface Stamp {
