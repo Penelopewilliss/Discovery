@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -63,6 +63,8 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const [comments, setComments] = useState<Comment[]>(() => getComments(post.id));
   const [commentCount, setCommentCount] = useState(post.comments);
   const [commentText, setCommentText] = useState('');
+  const [showHeartAnim, setShowHeartAnim] = useState(false);
+  const lastTapRef = useRef<number>(0);
 
   const REACTION_EMOJIS = ['❤️', '🔥', '😮', '😂', '✈️', '🌍'];
 
@@ -117,6 +119,19 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
     onUpdate();
   };
 
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      // Double tap detected
+      if (!liked) {
+        handleLike();
+      }
+      setShowHeartAnim(true);
+      setTimeout(() => setShowHeartAnim(false), 800);
+    }
+    lastTapRef.current = now;
+  };
+
   const delayLabel = DELAY_LABELS[post.delay];
 
   return (
@@ -149,18 +164,25 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
       </View>
 
       {/* Image */}
-      <View style={styles.imageContainer}>
-        <Image source={{ uri: post.imageUrl }} style={styles.image} resizeMode="cover" />
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.7)']}
-          style={styles.imageGradient}
-        />
-        {delayLabel && (
-          <View style={styles.delayBadge}>
-            <Text style={styles.delayText}>🔒 {delayLabel}</Text>
-          </View>
-        )}
-      </View>
+      <TouchableWithoutFeedback onPress={handleDoubleTap}>
+        <View style={styles.imageContainer}>
+          <Image source={{ uri: post.imageUrl }} style={styles.image} resizeMode="cover" />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.7)']}
+            style={styles.imageGradient}
+          />
+          {delayLabel && (
+            <View style={styles.delayBadge}>
+              <Text style={styles.delayText}>🔒 {delayLabel}</Text>
+            </View>
+          )}
+          {showHeartAnim && (
+            <View style={styles.heartAnimContainer} pointerEvents="none">
+              <Text style={styles.heartAnim}>❤️</Text>
+            </View>
+          )}
+        </View>
+      </TouchableWithoutFeedback>
 
       {/* Tags */}
       <View style={styles.tags}>
@@ -410,6 +432,15 @@ const styles = StyleSheet.create({
   delayText: {
     color: theme.colors.textSecondary,
     ...theme.typography.tiny,
+  },
+  heartAnimContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heartAnim: {
+    fontSize: 90,
+    opacity: 0.9,
   },
   tags: {
     flexDirection: 'row',
