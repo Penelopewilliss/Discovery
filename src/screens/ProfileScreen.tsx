@@ -234,8 +234,7 @@ export default function ProfileScreen() {
 
         <View style={styles.profileContent}>
           {/* Identity */}
-          <Text style={styles.displayName}>{displayName}</Text>
-          <Text style={styles.username}>@{username}</Text>
+          <Text style={styles.displayName}>@{username}</Text>
           {!!bio && <Text style={styles.bio}>{bio}</Text>}
 
           {/* Edit Profile button */}
