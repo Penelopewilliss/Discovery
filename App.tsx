@@ -98,10 +98,8 @@ function AppNavigator() {
       if (stored) {
         setUser(JSON.parse(stored));
       } else {
-        // Build a basic profile from the email
-        const namePart = email.split('@')[0].replace(/[^a-zA-Z]/g, ' ').trim();
-        const name = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-        setUser({ name, username: namePart.toLowerCase(), email, avatarUri: null, bio: '', homeCountry: '', interests: [] });
+        // No stored account — create a blank profile so they can set up via Edit Profile
+        setUser({ name: 'Traveler', username: 'traveler', email, avatarUri: null, bio: '', homeCountry: '', interests: [] });
       }
     } catch (_) {}
     setAuthState('app');

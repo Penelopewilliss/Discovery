@@ -41,7 +41,11 @@ export default function SignUpScreen({ onNext, onBack, onLogin }: Props) {
       Alert.alert('Weak password', 'Password must be at least 6 characters.');
       return;
     }
-    onNext({ name, username, email });
+    if (username.includes('@')) {
+      Alert.alert('Invalid username', 'Username cannot contain @. Just use letters, numbers and dots.');
+      return;
+    }
+    onNext({ name, username: username.replace(/[^a-zA-Z0-9._]/g, '').toLowerCase(), email });
   };
 
   return (

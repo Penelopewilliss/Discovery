@@ -103,7 +103,7 @@ export default function ProfileScreen() {
   const saveProfile = async () => {
     const updated = {
       name: editName.trim() || displayName,
-      username: editUsername.trim().replace(/^@/, '') || username,
+      username: editUsername.trim().replace(/@/g, '') || username,
       email: loggedInUser?.email ?? '',
       bio: editBio.trim(),
       avatarUri: editAvatar,
@@ -178,7 +178,7 @@ export default function ProfileScreen() {
               <TextInput
                 style={[styles.editFieldInput, { flex: 1 }]}
                 value={editUsername}
-                onChangeText={(t) => setEditUsername(t.replace(/^@/, '').replace(/\s/g, '').toLowerCase())}
+                onChangeText={(t) => setEditUsername(t.replace(/@/g, '').replace(/\s/g, '').toLowerCase())}
                 placeholder="yourusername"
                 placeholderTextColor={theme.colors.textMuted}
                 autoCapitalize="none"

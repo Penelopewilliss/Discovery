@@ -106,7 +106,7 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
     if (!text) return;
     const newComment = addComment(post.id, text, {
       userId: loggedInUser?.email ?? 'me',
-      username: loggedInUser?.username ?? 'you',
+      username: (loggedInUser?.username ?? 'traveler').replace(/@/g, ''),
       userAvatar: loggedInUser?.avatarUri ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
     });
     setComments((prev) => [newComment, ...prev]);
