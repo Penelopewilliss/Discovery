@@ -103,7 +103,7 @@ export default function ProfileScreen() {
 
   const saveProfile = async () => {
     const updated = {
-      name: editName.trim() || displayName,
+      name: editUsername.trim().replace(/@/g, '') || username,
       username: editUsername.trim().replace(/@/g, '') || username,
       email: loggedInUser?.email ?? '',
       bio: editBio.trim(),
@@ -163,17 +163,7 @@ export default function ProfileScreen() {
             </View>
 
             {/* Bio */}
-            <Text style={styles.editLabel}>Display Name</Text>
-            <TextInput
-              style={styles.editFieldInput}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="Your full name"
-              placeholderTextColor={theme.colors.textMuted}
-              maxLength={50}
-            />
-
-            <Text style={[styles.editLabel, { marginTop: theme.spacing.md }]}>Username</Text>
+            <Text style={styles.editLabel}>Username</Text>
             <View style={styles.editUsernameRow}>
               <Text style={styles.editAtSign}>@</Text>
               <TextInput
