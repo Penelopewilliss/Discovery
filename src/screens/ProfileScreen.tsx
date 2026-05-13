@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '../theme';
-import { mockUser, mockStamps, mockPosts } from '../data/mockData';
+import { mockUser, mockStamps, mockPosts, mockFollowers, mockFollowing } from '../data/mockData';
 import GlassCard from '../components/GlassCard';
 import { useUser } from '../context/UserContext';
 import { PostDelay } from '../types';
@@ -235,13 +235,18 @@ export default function ProfileScreen() {
           {/* Stats row */}
           <View style={styles.statsRow}>
             <View style={styles.stat}>
-              <Text style={styles.statValue}>{user.countriesVisited.length}</Text>
-              <Text style={styles.statLabel}>Countries</Text>
+              <Text style={styles.statValue}>{mockFollowers.length}</Text>
+              <Text style={styles.statLabel}>Followers</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.stat}>
-              <Text style={styles.statValue}>{user.placesFollowed.length}</Text>
-              <Text style={styles.statLabel}>Places</Text>
+              <Text style={styles.statValue}>{mockFollowing.length}</Text>
+              <Text style={styles.statLabel}>Following</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              <Text style={styles.statValue}>{user.countriesVisited.length}</Text>
+              <Text style={styles.statLabel}>Countries</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.stat}>

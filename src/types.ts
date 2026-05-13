@@ -100,6 +100,7 @@ export interface Group {
   coverImage: string;
   joined: boolean;
   requested: boolean;
+  createdByMe?: boolean;
 }
 
 export interface Stamp {

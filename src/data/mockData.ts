@@ -510,3 +510,33 @@ export function addComment(postId: string, text: string, author: { userId: strin
   );
   return comment;
 }
+
+// ── Follow system ──────────────────────────────────────────────────────────
+// userIds the logged-in user is following
+export let mockFollowing: string[] = ['user_2', 'user_3'];
+
+// userids of people who follow the logged-in user (mock, static-ish)
+export let mockFollowers: string[] = ['user_4', 'user_5', 'user_6', 'user_7'];
+
+export function isFollowing(userId: string): boolean {
+  return mockFollowing.includes(userId);
+}
+
+export function toggleFollowUser(userId: string): void {
+  if (mockFollowing.includes(userId)) {
+    mockFollowing = mockFollowing.filter((id) => id !== userId);
+  } else {
+    mockFollowing = [...mockFollowing, userId];
+  }
+}
+
+// ── Group creation ─────────────────────────────────────────────────────────
+let groupCounter = 100;
+
+export function addGroup(group: Omit<Group, 'id'>): Group {
+  groupCounter += 1;
+  const newGroup: Group = { ...group, id: `group_custom_${groupCounter}` };
+  mockGroups.push(newGroup);
+  return newGroup;
+}
+

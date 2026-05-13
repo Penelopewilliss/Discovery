@@ -6,19 +6,28 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  Switch,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { mockGroups } from '../data/mockData';
+import { mockGroups, addGroup } from '../data/mockData';
 import GroupCard from '../components/GroupCard';
 
-const FILTERS = ['All', 'Public', 'Private', 'Joined'];
+const FILTERS = ['All', 'Public', 'Private', 'Joined', 'Mine'];
 
 export default function GroupsScreen() {
   const [filter, setFilter] = useState('All');
   const [query, setQuery] = useState('');
   const [tick, setTick] = useState(0);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [newPrivate, setNewPrivate] = useState(false);
 
   const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
 
@@ -32,15 +41,113 @@ export default function GroupsScreen() {
     if (filter === 'Public') return !g.isPrivate;
     if (filter === 'Private') return g.isPrivate;
     if (filter === 'Joined') return g.joined;
+    if (filter === 'Mine') return !!g.createdByMe;
     return true;
   });
+
+  const handleCreate = () => {
+    if (!newName.trim()) {
+      Alert.alert('Name required', 'Please give your group a name.');
+      return;
+    }
+    addGroup({
+      name: newName.trim(),
+      description: newDesc.trim() || 'No description yet.',
+      isPrivate: newPrivate,
+      memberCount: 1,
+      coverImage: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&q=80',
+      joined: true,
+      requested: false,
+      createdByMe: true,
+    });
+    setNewName('');
+    setNewDesc('');
+    setNewPrivate(false);
+    setShowCreate(false);
+    forceUpdate();
+  };
+
+  if (showCreate) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.createContainer} keyboardShouldPersistTaps="handled">
+            {/* Create header */}
+            <View style={styles.createHeader}>
+              <TouchableOpacity onPress={() => setShowCreate(false)}>
+                <Text style={styles.createCancel}>✕ Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.createTitle}>New Group</Text>
+              <TouchableOpacity onPress={handleCreate}>
+                <LinearGradient
+                  colors={theme.colors.gradientPrimary as [string, string]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.createSaveBtn}
+                >
+                  <Text style={styles.createSaveBtnText}>Create</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.createLabel}>Group Name</Text>
+            <TextInput
+              style={styles.createInput}
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="e.g. Summer Europe 2026"
+              placeholderTextColor={theme.colors.textMuted}
+              maxLength={60}
+            />
+
+            <Text style={[styles.createLabel, { marginTop: theme.spacing.md }]}>Description</Text>
+            <TextInput
+              style={[styles.createInput, styles.createBioInput]}
+              value={newDesc}
+              onChangeText={(t) => setNewDesc(t.slice(0, 200))}
+              placeholder="What's this group about?"
+              placeholderTextColor={theme.colors.textMuted}
+              multiline
+              maxLength={200}
+            />
+            <Text style={styles.charCount}>{newDesc.length}/200</Text>
+
+            <View style={styles.privateRow}>
+              <View>
+                <Text style={styles.createLabel}>Private Group</Text>
+                <Text style={styles.privateHint}>Only invited members can see & join</Text>
+              </View>
+              <Switch
+                value={newPrivate}
+                onValueChange={setNewPrivate}
+                trackColor={{ false: theme.colors.border, true: theme.colors.gradientPrimary[0] }}
+                thumbColor="#fff"
+              />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Groups</Text>
-        <Text style={styles.subtitle}>Travel communities & private circles</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>Groups</Text>
+          <Text style={styles.subtitle}>Travel communities & private circles</Text>
+        </View>
+        <TouchableOpacity onPress={() => setShowCreate(true)} style={styles.createBtnWrapper}>
+          <LinearGradient
+            colors={theme.colors.gradientPrimary as [string, string]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.createBtn}
+          >
+            <Text style={styles.createBtnText}>+ Create</Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
 
       {/* Search */}
@@ -108,9 +215,93 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.xs,
+  },
+  createBtnWrapper: {
+    borderRadius: theme.borderRadius.full,
+    overflow: 'hidden',
+  },
+  createBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.full,
+  },
+  createBtnText: {
+    color: '#fff',
+    ...theme.typography.caption,
+    fontWeight: '700',
+  },
+  createContainer: {
+    padding: theme.spacing.md,
+  },
+  createHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.lg,
+  },
+  createCancel: {
+    color: theme.colors.textMuted,
+    ...theme.typography.body,
+  },
+  createTitle: {
+    color: theme.colors.text,
+    ...theme.typography.title,
+  },
+  createSaveBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.full,
+  },
+  createSaveBtnText: {
+    color: '#fff',
+    ...theme.typography.caption,
+    fontWeight: '700',
+  },
+  createLabel: {
+    color: theme.colors.textMuted,
+    ...theme.typography.caption,
+    marginBottom: 6,
+  },
+  createInput: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    color: theme.colors.text,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 12,
+    ...theme.typography.body,
+  },
+  createBioInput: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  charCount: {
+    color: theme.colors.textMuted,
+    ...theme.typography.tiny,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  privateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: theme.spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.md,
+  },
+  privateHint: {
+    color: theme.colors.textMuted,
+    ...theme.typography.tiny,
+    marginTop: 2,
   },
   title: {
     color: theme.colors.text,

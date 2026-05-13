@@ -17,7 +17,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Post, PostDelay, Comment } from '../types';
 import { theme } from '../theme';
-import { toggleLike, toggleSave, toggleReaction, getComments, addComment } from '../data/mockData';
+import { toggleLike, toggleSave, toggleReaction, getComments, addComment, isFollowing, toggleFollowUser } from '../data/mockData';
 import { useUser } from '../context/UserContext';
 
 const { width } = Dimensions.get('window');
@@ -51,6 +51,8 @@ interface PostCardProps {
 
 export default function PostCard({ post, onUpdate }: PostCardProps) {
   const { user: loggedInUser } = useUser();
+  const isOwnPost = post.userId === (loggedInUser?.email ?? 'me') || post.userId === 'user_1';
+  const [following, setFollowing] = useState(() => isFollowing(post.userId));
   const [liked, setLiked] = useState(post.liked);
   const [saved, setSaved] = useState(post.saved);
   const [likes, setLikes] = useState(post.likes);
@@ -128,6 +130,19 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
             📍 {post.blurLocation ? post.locationArea.split(',')[0].trim() + ' region' : post.locationArea}
           </Text>
         </View>
+        {!isOwnPost && (
+          <TouchableOpacity
+            onPress={() => {
+              toggleFollowUser(post.userId);
+              setFollowing((prev) => !prev);
+            }}
+            style={[styles.followBtn, following && styles.followingBtn]}
+          >
+            <Text style={[styles.followBtnText, following && styles.followingBtnText]}>
+              {following ? 'Following' : 'Follow'}
+            </Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.moodBadge}>
           <Text style={styles.moodText}>{post.mood}</Text>
         </View>
@@ -344,6 +359,26 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryLight,
     ...theme.typography.tiny,
     textTransform: 'capitalize',
+  },
+  followBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.gradientPrimary[0],
+    marginRight: 6,
+  },
+  followingBtn: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+  },
+  followBtnText: {
+    color: theme.colors.gradientPrimary[0],
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  followingBtnText: {
+    color: theme.colors.textMuted,
   },
   imageContainer: {
     width: '100%',
