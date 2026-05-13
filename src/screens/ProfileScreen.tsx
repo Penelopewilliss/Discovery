@@ -7,7 +7,6 @@ import {
   Image,
   TouchableOpacity,
   Switch,
-  Modal,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -98,17 +97,87 @@ export default function ProfileScreen() {
   };
 
   const saveProfile = async () => {
-    if (!loggedInUser) return;
-    const updated = { ...loggedInUser, bio: editBio.trim(), avatarUri: editAvatar };
+    const updated = {
+      name: loggedInUser?.name ?? displayName,
+      username: loggedInUser?.username ?? username,
+      email: loggedInUser?.email ?? '',
+      bio: editBio.trim(),
+      avatarUri: editAvatar,
+      homeCountry: loggedInUser?.homeCountry ?? '',
+      interests: loggedInUser?.interests ?? [],
+    };
     setUser(updated);
-    try {
-      await AsyncStorage.setItem(`user_${loggedInUser.email}`, JSON.stringify(updated));
-    } catch (_) {}
+    if (updated.email) {
+      try {
+        await AsyncStorage.setItem(`user_${updated.email}`, JSON.stringify(updated));
+      } catch (_) {}
+    }
     setShowEdit(false);
   };
 
   const savedPosts = mockPosts.filter((p) => user.savedPosts.includes(p.id));
 
+  // ── Edit Profile view ──────────────────────────────────────────────────────
+  if (showEdit) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          {/* Header */}
+          <View style={styles.editHeader}>
+            <TouchableOpacity onPress={() => setShowEdit(false)}>
+              <Text style={styles.editCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.editTitle}>Edit Profile</Text>
+            <TouchableOpacity onPress={saveProfile}>
+              <Text style={styles.editSave}>Save</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: theme.spacing.md }}>
+            {/* Avatar */}
+            <View style={styles.editAvatarSection}>
+              {editAvatar ? (
+                <Image source={{ uri: editAvatar }} style={styles.editAvatar} />
+              ) : (
+                <LinearGradient
+                  colors={[theme.colors.primary, theme.colors.accent]}
+                  style={[styles.editAvatar, styles.editAvatarFallback]}
+                >
+                  <Text style={styles.editAvatarInitial}>{displayName[0]?.toUpperCase() ?? '?'}</Text>
+                </LinearGradient>
+              )}
+              <View style={styles.editAvatarBtns}>
+                <TouchableOpacity style={styles.editAvatarBtn} onPress={pickAvatar}>
+                  <Text style={styles.editAvatarBtnText}>📷  Choose Photo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.editAvatarBtn} onPress={takeAvatar}>
+                  <Text style={styles.editAvatarBtnText}>📸  Take Photo</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Bio */}
+            <Text style={styles.editLabel}>Bio</Text>
+            <TextInput
+              style={styles.editBioInput}
+              value={editBio}
+              onChangeText={(t) => setEditBio(t.slice(0, 150))}
+              placeholder="Tell the world about your travels…"
+              placeholderTextColor={theme.colors.textMuted}
+              multiline
+              maxLength={150}
+            />
+            <Text style={styles.editCharCount}>{editBio.length}/150</Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Normal profile view ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -275,60 +344,6 @@ export default function ProfileScreen() {
 
         <View style={{ height: theme.spacing.xxl }} />
       </ScrollView>
-
-      {/* Edit Profile Modal */}
-      <Modal visible={showEdit} animationType="slide" transparent onRequestClose={() => setShowEdit(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.editOverlay}>
-          <View style={styles.editSheet}>
-            <View style={styles.editHeader}>
-              <TouchableOpacity onPress={() => setShowEdit(false)}>
-                <Text style={styles.editCancel}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={styles.editTitle}>Edit Profile</Text>
-              <TouchableOpacity onPress={saveProfile}>
-                <Text style={styles.editSave}>Save</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Avatar picker */}
-            <View style={styles.editAvatarSection}>
-              {editAvatar ? (
-                <Image source={{ uri: editAvatar }} style={styles.editAvatar} />
-              ) : (
-                <LinearGradient
-                  colors={[theme.colors.primary, theme.colors.accent]}
-                  style={[styles.editAvatar, styles.editAvatarFallback]}
-                >
-                  <Text style={styles.editAvatarInitial}>{displayName[0]?.toUpperCase()}</Text>
-                </LinearGradient>
-              )}
-              <View style={styles.editAvatarBtns}>
-                <TouchableOpacity style={styles.editAvatarBtn} onPress={pickAvatar}>
-                  <Text style={styles.editAvatarBtnText}>📷  Choose Photo</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.editAvatarBtn} onPress={takeAvatar}>
-                  <Text style={styles.editAvatarBtnText}>📸  Take Photo</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Bio */}
-            <View style={styles.editBioSection}>
-              <Text style={styles.editLabel}>Bio</Text>
-              <TextInput
-                style={styles.editBioInput}
-                value={editBio}
-                onChangeText={(t) => setEditBio(t.slice(0, 150))}
-                placeholder="Tell the world about your travels…"
-                placeholderTextColor={theme.colors.textMuted}
-                multiline
-                maxLength={150}
-              />
-              <Text style={styles.editCharCount}>{editBio.length}/150</Text>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -595,19 +610,6 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     fontWeight: '700',
   },
-  editOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  editSheet: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 40,
-    borderTopWidth: 1,
-    borderColor: theme.colors.border,
-  },
   editHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -634,13 +636,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: theme.spacing.lg,
     gap: theme.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    marginBottom: theme.spacing.md,
   },
   editAvatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     borderWidth: 3,
     borderColor: theme.colors.primary,
   },
@@ -650,7 +651,7 @@ const styles = StyleSheet.create({
   },
   editAvatarInitial: {
     color: '#fff',
-    fontSize: 36,
+    fontSize: 40,
     fontWeight: '800',
   },
   editAvatarBtns: {
@@ -670,10 +671,6 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     fontWeight: '600',
   },
-  editBioSection: {
-    paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.md,
-  },
   editLabel: {
     color: theme.colors.textMuted,
     ...theme.typography.caption,
@@ -690,7 +687,7 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     ...theme.typography.body,
     padding: theme.spacing.sm,
-    minHeight: 80,
+    minHeight: 100,
     textAlignVertical: 'top',
   },
   editCharCount: {
