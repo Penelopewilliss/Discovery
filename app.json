@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "TRAVLORA",
+    "slug": "travlora",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.travlora.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0F"
+      },
+      "package": "com.travlora.app"
+    },
+    "plugins": []
+  }
+}
