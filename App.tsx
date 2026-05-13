@@ -9,6 +9,12 @@ import ExploreScreen from './src/screens/ExploreScreen';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import GroupsScreen from './src/screens/GroupsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import WelcomeScreen from './src/screens/WelcomeScreen';
+import LoginScreen from './src/screens/LoginScreen';
+import SignUpScreen from './src/screens/SignUpScreen';
+import ProfileSetupScreen from './src/screens/ProfileSetupScreen';
+
+type AuthState = 'welcome' | 'login' | 'signup' | 'setup' | 'app';
 
 const TABS = [
   { name: 'Home', emoji: '🏠' },
@@ -18,7 +24,7 @@ const TABS = [
   { name: 'Profile', emoji: '👤' },
 ];
 
-function TopBar({ active, onSelect }) {
+function TopBar({ active, onSelect }: { active: string; onSelect: (name: string) => void }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.tabBar, { paddingTop: insets.top }]}>
@@ -37,6 +43,7 @@ function TopBar({ active, onSelect }) {
             const focused = active === tab.name;
             return (
               <TouchableOpacity key={tab.name} onPress={() => onSelect(tab.name)} style={styles.tab}>
+                <Text style={[styles.tabEmoji, !focused && styles.tabEmojiDim]}>{tab.emoji}</Text>
                 <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{tab.name}</Text>
                 {focused && <View style={styles.activeIndicator} />}
               </TouchableOpacity>
@@ -49,7 +56,7 @@ function TopBar({ active, onSelect }) {
   );
 }
 
-function Screen({ name }) {
+function MainScreen({ name }: { name: string }) {
   switch (name) {
     case 'Explore': return <ExploreScreen />;
     case 'Create': return <CreatePostScreen />;
@@ -60,14 +67,68 @@ function Screen({ name }) {
 }
 
 export default function App() {
+  const [authState, setAuthState] = useState<AuthState>('welcome');
   const [activeTab, setActiveTab] = useState('Home');
+  const [signUpData, setSignUpData] = useState({ name: '', username: '', email: '' });
+
+  if (authState === 'welcome') {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <WelcomeScreen
+          onGetStarted={() => setAuthState('signup')}
+          onLogin={() => setAuthState('login')}
+        />
+      </SafeAreaProvider>
+    );
+  }
+
+  if (authState === 'login') {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <LoginScreen
+          onLogin={() => setAuthState('app')}
+          onBack={() => setAuthState('welcome')}
+          onSignUp={() => setAuthState('signup')}
+        />
+      </SafeAreaProvider>
+    );
+  }
+
+  if (authState === 'signup') {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <SignUpScreen
+          onNext={(data) => { setSignUpData(data); setAuthState('setup'); }}
+          onBack={() => setAuthState('welcome')}
+          onLogin={() => setAuthState('login')}
+        />
+      </SafeAreaProvider>
+    );
+  }
+
+  if (authState === 'setup') {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <ProfileSetupScreen
+          name={signUpData.name}
+          username={signUpData.username}
+          onComplete={() => setAuthState('app')}
+        />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
       <View style={styles.root}>
         <TopBar active={activeTab} onSelect={setActiveTab} />
         <View style={styles.screen}>
-          <Screen name={activeTab} />
+          <MainScreen name={activeTab} />
         </View>
       </View>
     </SafeAreaProvider>
