@@ -17,7 +17,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Post, PostDelay, Comment } from '../types';
 import { theme } from '../theme';
-import { toggleLike, toggleSave, toggleReaction, getComments, addComment, mockUser } from '../data/mockData';
+import { toggleLike, toggleSave, toggleReaction, getComments, addComment } from '../data/mockData';
+import { useUser } from '../context/UserContext';
 
 const { width } = Dimensions.get('window');
 
@@ -49,6 +50,7 @@ interface PostCardProps {
 }
 
 export default function PostCard({ post, onUpdate }: PostCardProps) {
+  const { loggedInUser } = useUser();
   const [liked, setLiked] = useState(post.liked);
   const [saved, setSaved] = useState(post.saved);
   const [likes, setLikes] = useState(post.likes);
@@ -103,9 +105,9 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
     const text = commentText.trim();
     if (!text) return;
     const newComment = addComment(post.id, text, {
-      userId: mockUser.id,
-      username: mockUser.username,
-      userAvatar: mockUser.avatar,
+      userId: loggedInUser?.email ?? 'me',
+      username: loggedInUser?.username ?? 'you',
+      userAvatar: loggedInUser?.avatarUri ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
     });
     setComments((prev) => [newComment, ...prev]);
     setCommentCount((prev) => prev + 1);
@@ -271,7 +273,7 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
 
           {/* Input */}
           <View style={styles.commentInputRow}>
-            <Image source={{ uri: mockUser.avatar }} style={styles.commentAvatar} />
+            <Image source={{ uri: loggedInUser?.avatarUri ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80' }} style={styles.commentAvatar} />
             <TextInput
               style={styles.commentInput}
               placeholder="Write a comment…"
