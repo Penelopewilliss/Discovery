@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from './src/theme';
 import HomeScreen from './src/screens/HomeScreen';
 import ExploreScreen from './src/screens/ExploreScreen';
@@ -83,6 +84,29 @@ function AppNavigator() {
   const [activeTab, setActiveTab] = useState('Home');
   const [signUpData, setSignUpData] = useState({ name: '', username: '', email: '' });
 
+  const saveAndEnter = async (userData: Parameters<typeof setUser>[0]) => {
+    setUser(userData);
+    try {
+      await AsyncStorage.setItem('@travlora_user', JSON.stringify(userData));
+    } catch (_) {}
+    setAuthState('app');
+  };
+
+  const loginAndEnter = async (email: string) => {
+    try {
+      const stored = await AsyncStorage.getItem('@travlora_user');
+      if (stored) {
+        setUser(JSON.parse(stored));
+      } else {
+        // Build a basic profile from the email
+        const namePart = email.split('@')[0].replace(/[^a-zA-Z]/g, ' ').trim();
+        const name = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+        setUser({ name, username: namePart.toLowerCase(), email, avatarUri: null, bio: '', homeCountry: '', interests: [] });
+      }
+    } catch (_) {}
+    setAuthState('app');
+  };
+
   if (authState === 'welcome') {
     return (
       <>
@@ -100,7 +124,7 @@ function AppNavigator() {
       <>
         <StatusBar style="light" />
         <LoginScreen
-          onLogin={() => setAuthState('app')}
+          onLogin={(email) => loginAndEnter(email)}
           onBack={() => setAuthState('welcome')}
           onSignUp={() => setAuthState('signup')}
         />
@@ -129,7 +153,7 @@ function AppNavigator() {
           name={signUpData.name}
           username={signUpData.username}
           onComplete={(setupData) => {
-            setUser({
+            saveAndEnter({
               name: signUpData.name,
               username: signUpData.username,
               email: signUpData.email,
@@ -138,7 +162,6 @@ function AppNavigator() {
               homeCountry: setupData.homeCountry,
               interests: setupData.interests,
             });
-            setAuthState('app');
           }}
         />
       </>

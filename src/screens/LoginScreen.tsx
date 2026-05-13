@@ -15,7 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 
 type Props = {
-  onLogin: () => void;
+  onLogin: (email: string) => void;
   onBack: () => void;
   onSignUp: () => void;
 };
@@ -35,7 +35,7 @@ export default function LoginScreen({ onLogin, onBack, onSignUp }: Props) {
     // Simulate network call
     setTimeout(() => {
       setLoading(false);
-      onLogin();
+      onLogin(email.trim());
     }, 800);
   };
 
