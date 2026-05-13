@@ -9,13 +9,15 @@ import {
   Switch,
   Alert,
   Image,
+  FlatList,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../theme';
 import { addPost, mockPlaces } from '../data/mockData';
-import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag } from '../types';
+import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem } from '../types';
 import GlassCard from '../components/GlassCard';
 
 const TAGS: TravelTag[] = ['beach', 'food', 'hidden gem', 'city', 'nature', 'budget', 'luxury', 'adventure', 'culture', 'solo'];
@@ -46,11 +48,17 @@ export default function CreatePostScreen() {
   const [hideExact, setHideExact] = useState(true);
   const [blurLocation, setBlurLocation] = useState(false);
   const [hideStay, setHideStay] = useState(true);
-  const [mediaUri, setMediaUri] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<'photo' | 'video' | null>(null);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [reactionsEnabled, setReactionsEnabled] = useState(true);
 
+  const MAX_MEDIA = 10;
+
   const pickMedia = async (source: 'library' | 'camera', type: 'photo' | 'video') => {
+    const remaining = MAX_MEDIA - mediaItems.length;
+    if (remaining <= 0) {
+      Alert.alert('Limit reached', `You can add up to ${MAX_MEDIA} photos/videos per post.`);
+      return;
+    }
     const perm = source === 'camera'
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -65,14 +73,23 @@ export default function CreatePostScreen() {
           videoMaxDuration: 60,
         })
       : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: type === 'video' ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.All,
+          mediaTypes: ImagePicker.MediaTypeOptions.All,
           quality: 0.8,
           videoMaxDuration: 60,
+          allowsMultipleSelection: true,
+          selectionLimit: remaining,
         });
     if (!result.canceled && result.assets.length > 0) {
-      setMediaUri(result.assets[0].uri);
-      setMediaType(result.assets[0].type === 'video' ? 'video' : 'photo');
+      const newItems: MediaItem[] = result.assets.map((a) => ({
+        uri: a.uri,
+        type: a.type === 'video' ? 'video' : 'photo',
+      }));
+      setMediaItems((prev) => [...prev, ...newItems].slice(0, MAX_MEDIA));
     }
+  };
+
+  const removeMedia = (index: number) => {
+    setMediaItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const toggleTag = (tag: TravelTag) => {
@@ -101,7 +118,8 @@ export default function CreatePostScreen() {
       userId: 'user_1',
       username: 'aurora.travels',
       userAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
-      imageUrl: mediaUri ?? mockPlaces[Math.floor(Math.random() * mockPlaces.length)].coverImage,
+      imageUrl: mediaItems.length > 0 ? mediaItems[0].uri : mockPlaces[Math.floor(Math.random() * mockPlaces.length)].coverImage,
+      mediaItems: mediaItems.length > 0 ? mediaItems : undefined,
       caption,
       locationArea: destination,
       destination,
@@ -143,8 +161,7 @@ export default function CreatePostScreen() {
     setBlurLocation(false);
     setHideStay(true);
     setReactionsEnabled(true);
-    setMediaUri(null);
-    setMediaType(null);
+    setMediaItems([]);
   };
 
   return (
@@ -158,34 +175,53 @@ export default function CreatePostScreen() {
 
         {/* Media picker */}
         <View style={styles.section}>
-          <Text style={styles.label}>Photo / Video</Text>
-          {mediaUri ? (
-            <View style={styles.mediaPreview}>
-              <Image source={{ uri: mediaUri }} style={styles.mediaImage} resizeMode="cover" />
-              {mediaType === 'video' && (
-                <View style={styles.videoBadge}><Text style={styles.videoBadgeText}>VIDEO</Text></View>
-              )}
-              <TouchableOpacity style={styles.removeMedia} onPress={() => { setMediaUri(null); setMediaType(null); }}>
-                <Text style={styles.removeMediaText}>✕ Remove</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
+          <View style={styles.mediaHeader}>
+            <Text style={styles.label}>Photos & Videos</Text>
+            <Text style={styles.mediaCount}>{mediaItems.length}/{MAX_MEDIA}</Text>
+          </View>
+
+          {/* Thumbnails strip */}
+          {mediaItems.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbStrip} contentContainerStyle={styles.thumbStripContent}>
+              {mediaItems.map((item, index) => (
+                <View key={index} style={styles.thumb}>
+                  <Image source={{ uri: item.uri }} style={styles.thumbImg} resizeMode="cover" />
+                  {item.type === 'video' && (
+                    <View style={styles.thumbVideoBadge}>
+                      <Text style={{ fontSize: 16 }}>▶</Text>
+                    </View>
+                  )}
+                  {index === 0 && (
+                    <View style={styles.thumbCoverBadge}>
+                      <Text style={styles.thumbCoverText}>Cover</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity style={styles.thumbRemove} onPress={() => removeMedia(index)}>
+                    <Text style={styles.thumbRemoveText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Add media buttons */}
+          {mediaItems.length < MAX_MEDIA && (
             <View style={styles.mediaButtons}>
               <TouchableOpacity style={styles.mediaBtn} onPress={() => pickMedia('library', 'photo')}>
                 <Text style={styles.mediaBtnIcon}>🖼️</Text>
-                <Text style={styles.mediaBtnLabel}>Photo Library</Text>
+                <Text style={styles.mediaBtnLabel}>Add Photos</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.mediaBtn} onPress={() => pickMedia('library', 'video')}>
                 <Text style={styles.mediaBtnIcon}>🎬</Text>
-                <Text style={styles.mediaBtnLabel}>Video Library</Text>
+                <Text style={styles.mediaBtnLabel}>Add Video</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.mediaBtn} onPress={() => pickMedia('camera', 'photo')}>
                 <Text style={styles.mediaBtnIcon}>📷</Text>
-                <Text style={styles.mediaBtnLabel}>Take Photo</Text>
+                <Text style={styles.mediaBtnLabel}>Camera</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.mediaBtn} onPress={() => pickMedia('camera', 'video')}>
                 <Text style={styles.mediaBtnIcon}>🎥</Text>
-                <Text style={styles.mediaBtnLabel}>Record Video</Text>
+                <Text style={styles.mediaBtnLabel}>Record</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -566,6 +602,75 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  mediaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.sm,
+  },
+  mediaCount: {
+    color: theme.colors.textMuted,
+    ...theme.typography.caption,
+  },
+  thumbStrip: {
+    marginBottom: theme.spacing.sm,
+  },
+  thumbStripContent: {
+    gap: 10,
+    paddingRight: 4,
+  },
+  thumb: {
+    width: 90,
+    height: 90,
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  thumbImg: {
+    width: '100%',
+    height: '100%',
+  },
+  thumbVideoBadge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  thumbCoverBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  thumbCoverText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  thumbRemove: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbRemoveText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   mediaButtons: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -588,44 +693,5 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: '500',
-  },
-  mediaPreview: {
-    borderRadius: theme.borderRadius.md,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  mediaImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: theme.borderRadius.md,
-  },
-  videoBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  videoBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  removeMedia: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  removeMediaText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

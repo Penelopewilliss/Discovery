@@ -10,12 +10,15 @@ import {
   Modal,
   TextInput,
   FlatList,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Post, PostDelay, Comment } from '../types';
+import { Post, PostDelay, Comment, MediaItem } from '../types';
 import { theme } from '../theme';
 import { toggleLike, toggleSave, toggleReaction, getComments, addComment, isFollowing, toggleFollowUser } from '../data/mockData';
 import { useUser } from '../context/UserContext';
@@ -56,17 +59,14 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const [liked, setLiked] = useState(post.liked);
   const [saved, setSaved] = useState(post.saved);
   const [likes, setLikes] = useState(post.likes);
-  const [reactions, setReactions] = useState(post.reactions);
-  const [userReaction, setUserReaction] = useState(post.userReaction);
-  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>(() => getComments(post.id));
   const [commentCount, setCommentCount] = useState(post.comments);
   const [commentText, setCommentText] = useState('');
   const [showHeartAnim, setShowHeartAnim] = useState(false);
   const lastTapRef = useRef<number>(0);
-
-  const REACTION_EMOJIS = ['❤️', '🔥', '😮', '😂', '✈️', '🌍'];
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [cardWidth, setCardWidth] = useState(0);
 
   const handleLike = () => {
     toggleLike(post.id);
@@ -84,25 +84,10 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Check out this travel post on TRAVLORA!\n\n"${post.caption}"\n\n📍 ${post.locationArea}`,
-        title: 'TRAVLORA',
+        message: `Check out this travel post on HiddenGems!\n\n"${post.caption}"\n\n📍 ${post.locationArea}`,
+        title: 'HiddenGems',
       });
     } catch (_) {}
-  };
-
-  const handleReaction = (emoji: string) => {
-    toggleReaction(post.id, emoji);
-    const newReactions = { ...reactions };
-    if (userReaction) {
-      newReactions[userReaction] = Math.max(0, (newReactions[userReaction] || 1) - 1);
-      if (newReactions[userReaction] === 0) delete newReactions[userReaction];
-    }
-    const next = userReaction === emoji ? null : emoji;
-    if (next) newReactions[next] = (newReactions[next] || 0) + 1;
-    setReactions(newReactions);
-    setUserReaction(next);
-    setShowReactionPicker(false);
-    onUpdate();
   };
 
   const handleSendComment = () => {
@@ -163,26 +148,83 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
         </View>
       </View>
 
-      {/* Image */}
-      <TouchableWithoutFeedback onPress={handleDoubleTap}>
-        <View style={styles.imageContainer}>
-          <Image source={{ uri: post.imageUrl }} style={styles.image} resizeMode="cover" />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.7)']}
-            style={styles.imageGradient}
-          />
-          {delayLabel && (
-            <View style={styles.delayBadge}>
-              <Text style={styles.delayText}>🔒 {delayLabel}</Text>
+      {/* Image / Carousel */}
+      {(() => {
+        const items: MediaItem[] = post.mediaItems && post.mediaItems.length > 0
+          ? post.mediaItems
+          : [{ uri: post.imageUrl, type: 'photo' }];
+        const isMulti = items.length > 1;
+
+        const slideW = cardWidth > 0 ? cardWidth : width;
+
+        const renderSlide = (item: MediaItem, index: number) => (
+          <TouchableWithoutFeedback key={index} onPress={handleDoubleTap}>
+            <View style={[styles.imageContainer, isMulti && { width: slideW }]}>
+              {item.type === 'video' ? (
+                <View style={styles.videoPlaceholder}>
+                  <Text style={styles.videoPlaceholderIcon}>🎬</Text>
+                  <Text style={styles.videoPlaceholderLabel}>Video</Text>
+                </View>
+              ) : (
+                <Image source={{ uri: item.uri }} style={styles.image} resizeMode="cover" />
+              )}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.7)']}
+                style={styles.imageGradient}
+              />
+              {item.type === 'video' && (
+                <View style={styles.videoPlayOverlay} pointerEvents="none">
+                  <View style={styles.videoPlayBtn}>
+                    <Text style={styles.videoPlayIcon}>▶</Text>
+                  </View>
+                </View>
+              )}
+              {delayLabel && index === 0 && (
+                <View style={styles.delayBadge}>
+                  <Text style={styles.delayText}>🔒 {delayLabel}</Text>
+                </View>
+              )}
+              {isMulti && (
+                <View style={styles.slideCounter}>
+                  <Text style={styles.slideCounterText}>{carouselIndex + 1}/{items.length}</Text>
+                </View>
+              )}
+              {showHeartAnim && (
+                <View style={styles.heartAnimContainer} pointerEvents="none">
+                  <Text style={styles.heartAnim}>❤️</Text>
+                </View>
+              )}
             </View>
-          )}
-          {showHeartAnim && (
-            <View style={styles.heartAnimContainer} pointerEvents="none">
-              <Text style={styles.heartAnim}>❤️</Text>
+          </TouchableWithoutFeedback>
+        );
+
+        if (!isMulti) {
+          return renderSlide(items[0], 0);
+        }
+
+        return (
+          <View onLayout={(e) => setCardWidth(e.nativeEvent.layout.width)}>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+                const idx = Math.round(e.nativeEvent.contentOffset.x / slideW);
+                setCarouselIndex(idx);
+              }}
+              scrollEventThrottle={16}
+            >
+              {items.map((item, index) => renderSlide(item, index))}
+            </ScrollView>
+            {/* Dot indicators */}
+            <View style={styles.dotRow}>
+              {items.map((_, i) => (
+                <View key={i} style={[styles.dot, i === carouselIndex && styles.dotActive]} />
+              ))}
             </View>
-          )}
-        </View>
-      </TouchableWithoutFeedback>
+          </View>
+        );
+      })()}
 
       {/* Tags */}
       <View style={styles.tags}>
@@ -219,13 +261,6 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
           <Text style={styles.actionCount}>{commentCount.toLocaleString()}</Text>
         </TouchableOpacity>
 
-        {post.reactionsEnabled && (
-          <TouchableOpacity style={styles.actionBtn} onPress={() => setShowReactionPicker((v) => !v)}>
-            <Text style={styles.actionIcon}>{userReaction ?? '😊'}</Text>
-            <Text style={styles.actionCount}>React</Text>
-          </TouchableOpacity>
-        )}
-
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
           <Text style={styles.actionIcon}>📤</Text>
           <Text style={styles.actionCount}>Share</Text>
@@ -236,33 +271,6 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
           <Text style={styles.actionCount}>{saved ? 'Saved' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Reaction picker */}
-      {showReactionPicker && post.reactionsEnabled && (
-        <View style={styles.reactionPicker}>
-          {REACTION_EMOJIS.map((emoji) => (
-            <TouchableOpacity
-              key={emoji}
-              onPress={() => handleReaction(emoji)}
-              style={[styles.reactionOption, userReaction === emoji && styles.reactionOptionActive]}
-            >
-              <Text style={styles.reactionOptionEmoji}>{emoji}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Reaction counts */}
-      {post.reactionsEnabled && Object.keys(reactions).length > 0 && (
-        <View style={styles.reactionCounts}>
-          {Object.entries(reactions).map(([emoji, count]) => (
-            <View key={emoji} style={[styles.reactionCount, userReaction === emoji && styles.reactionCountActive]}>
-              <Text style={styles.reactionCountEmoji}>{emoji}</Text>
-              <Text style={styles.reactionCountText}>{count}</Text>
-            </View>
-          ))}
-        </View>
-      )}
 
       {/* Comments modal */}
       <Modal
@@ -441,6 +449,76 @@ const styles = StyleSheet.create({
   heartAnim: {
     fontSize: 90,
     opacity: 0.9,
+  },
+  videoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1a1a2e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  videoPlaceholderIcon: {
+    fontSize: 52,
+  },
+  videoPlaceholderLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  videoPlayOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoPlayBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.7)',
+  },
+  videoPlayIcon: {
+    color: '#fff',
+    fontSize: 22,
+    marginLeft: 3,
+  },
+  slideCounter: {
+    position: 'absolute',
+    top: theme.spacing.sm,
+    right: theme.spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  slideCounterText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  dotRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colors.border,
+  },
+  dotActive: {
+    backgroundColor: theme.colors.primary,
+    width: 18,
+    borderRadius: 3,
   },
   tags: {
     flexDirection: 'row',

@@ -33,27 +33,20 @@ function TopBar({ active, onSelect }: { active: string; onSelect: (name: string)
   return (
     <View style={[styles.tabBar, { paddingTop: insets.top }]}>
       <LinearGradient colors={['#0A0A0F', '#12121A']} style={StyleSheet.absoluteFill} />
-      <View style={styles.tabRow}>
-        <LinearGradient
-          colors={[theme.colors.primary, theme.colors.accent]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.logoGradient}
-        >
-          <Text style={styles.logoText}>TRAVLORA</Text>
-        </LinearGradient>
-        <View style={styles.tabs}>
-          {TABS.map((tab) => {
-            const focused = active === tab.name;
-            return (
-              <TouchableOpacity key={tab.name} onPress={() => onSelect(tab.name)} style={styles.tab}>
-                <Text style={[styles.tabEmoji, !focused && styles.tabEmojiDim]}>{tab.emoji}</Text>
-                <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{tab.name}</Text>
-                {focused && <View style={styles.activeIndicator} />}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+      {/* Brand name */}
+      <Text style={styles.brandName}>HiddenGems</Text>
+      {/* Tab row */}
+      <View style={styles.tabs}>
+        {TABS.map((tab) => {
+          const focused = active === tab.name;
+          return (
+            <TouchableOpacity key={tab.name} onPress={() => onSelect(tab.name)} style={styles.tab}>
+              <Text style={[styles.tabEmoji, !focused && styles.tabEmojiDim]}>{tab.emoji}</Text>
+              <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{tab.name}</Text>
+              {focused && <View style={styles.activeIndicator} />}
+            </TouchableOpacity>
+          );
+        })}
       </View>
       <View style={styles.border} />
     </View>
@@ -191,25 +184,20 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.background },
   screen: { flex: 1 },
   tabBar: { backgroundColor: theme.colors.surface, zIndex: 100 },
-  tabRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 12,
-    gap: theme.spacing.sm,
+  brandName: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+    paddingTop: 8,
+    paddingBottom: 2,
   },
-  logoGradient: {
-    borderRadius: theme.borderRadius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: theme.spacing.xs,
-  },
-  logoText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 2 },
-  tabs: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
-  tab: { alignItems: 'center', paddingVertical: 4, paddingHorizontal: 6, position: 'relative' },
-  tabEmoji: { fontSize: 22 },
+  tabs: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 8, paddingHorizontal: 4 },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 4, position: 'relative' },
+  tabEmoji: { fontSize: 20 },
   tabEmojiDim: { opacity: 0.45 },
-  tabLabel: { fontSize: 10, color: theme.colors.textMuted, fontWeight: '500', marginTop: 2 },
+  tabLabel: { fontSize: 9, color: theme.colors.textMuted, fontWeight: '500', marginTop: 2 },
   tabLabelActive: { color: theme.colors.primary },
   activeIndicator: {
     position: 'absolute',

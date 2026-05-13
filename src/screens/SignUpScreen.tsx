@@ -61,7 +61,7 @@ export default function SignUpScreen({ onNext, onBack, onLogin }: Props) {
 
             <View style={styles.header}>
               <Text style={styles.title}>Create account</Text>
-              <Text style={styles.subtitle}>Join the TRAVLORA community</Text>
+              <Text style={styles.subtitle}>Join the HiddenGems community</Text>
             </View>
 
             <View style={styles.form}>

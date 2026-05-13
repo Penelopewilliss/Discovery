@@ -53,7 +53,7 @@ export default function WelcomeScreen({ onGetStarted, onLogin }: Props) {
             >
               <Text style={styles.logoText}>T</Text>
             </LinearGradient>
-            <Text style={styles.appName}>TRAVLORA</Text>
+            <Text style={styles.appName}>HiddenGems</Text>
           </View>
 
           <Text style={styles.tagline}>Your world.{'\n'}Your story.{'\n'}Your timeline.</Text>

@@ -53,12 +53,18 @@ export interface User {
   hideExactLocation: boolean;
 }
 
+export interface MediaItem {
+  uri: string;
+  type: 'photo' | 'video';
+}
+
 export interface Post {
   id: string;
   userId: string;
   username: string;
   userAvatar: string;
   imageUrl: string;
+  mediaItems?: MediaItem[];
   caption: string;
   locationArea: string;
   destination: string;

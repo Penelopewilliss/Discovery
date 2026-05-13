@@ -61,7 +61,7 @@ export default function LoginScreen({ onLogin, onBack, onSignUp }: Props) {
                 <Text style={styles.logoText}>T</Text>
               </LinearGradient>
               <Text style={styles.title}>Welcome back</Text>
-              <Text style={styles.subtitle}>Log in to your TRAVLORA account</Text>
+              <Text style={styles.subtitle}>Log in to your HiddenGems account</Text>
             </View>
 
             {/* Fields */}
