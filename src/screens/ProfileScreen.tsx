@@ -11,6 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,6 +23,36 @@ import { mockUser, mockStamps, mockPosts, mockFollowers, mockFollowing } from '.
 import GlassCard from '../components/GlassCard';
 import { useUser } from '../context/UserContext';
 import { PostDelay } from '../types';
+
+const ALL_COUNTRIES: { name: string; emoji: string }[] = [
+  { name: 'Albania', emoji: '🇦🇱' }, { name: 'Argentina', emoji: '🇦🇷' },
+  { name: 'Australia', emoji: '🇦🇺' }, { name: 'Austria', emoji: '🇦🇹' },
+  { name: 'Bali (Indonesia)', emoji: '🇮🇩' }, { name: 'Belgium', emoji: '🇧🇪' },
+  { name: 'Brazil', emoji: '🇧🇷' }, { name: 'Canada', emoji: '🇨🇦' },
+  { name: 'China', emoji: '🇨🇳' }, { name: 'Colombia', emoji: '🇨🇴' },
+  { name: 'Croatia', emoji: '🇭🇷' }, { name: 'Czech Republic', emoji: '🇨🇿' },
+  { name: 'Denmark', emoji: '🇩🇰' }, { name: 'Egypt', emoji: '🇪🇬' },
+  { name: 'France', emoji: '🇫🇷' }, { name: 'Germany', emoji: '🇩🇪' },
+  { name: 'Greece', emoji: '🇬🇷' }, { name: 'Hungary', emoji: '🇭🇺' },
+  { name: 'Iceland', emoji: '🇮🇸' }, { name: 'India', emoji: '🇮🇳' },
+  { name: 'Indonesia', emoji: '🇮🇩' }, { name: 'Ireland', emoji: '🇮🇪' },
+  { name: 'Israel', emoji: '🇮🇱' }, { name: 'Italy', emoji: '🇮🇹' },
+  { name: 'Japan', emoji: '🇯🇵' }, { name: 'Jordan', emoji: '🇯🇴' },
+  { name: 'Kenya', emoji: '🇰🇪' }, { name: 'Malaysia', emoji: '🇲🇾' },
+  { name: 'Maldives', emoji: '🇲🇻' }, { name: 'Mexico', emoji: '🇲🇽' },
+  { name: 'Montenegro', emoji: '🇲🇪' }, { name: 'Morocco', emoji: '🇲🇦' },
+  { name: 'Netherlands', emoji: '🇳🇱' }, { name: 'New Zealand', emoji: '🇳🇿' },
+  { name: 'Norway', emoji: '🇳🇴' }, { name: 'Peru', emoji: '🇵🇪' },
+  { name: 'Philippines', emoji: '🇵🇭' }, { name: 'Poland', emoji: '🇵🇱' },
+  { name: 'Portugal', emoji: '🇵🇹' }, { name: 'Romania', emoji: '🇷🇴' },
+  { name: 'Singapore', emoji: '🇸🇬' }, { name: 'Slovenia', emoji: '🇸🇮' },
+  { name: 'South Africa', emoji: '🇿🇦' }, { name: 'South Korea', emoji: '🇰🇷' },
+  { name: 'Spain', emoji: '🇪🇸' }, { name: 'Sweden', emoji: '🇸🇪' },
+  { name: 'Switzerland', emoji: '🇨🇭' }, { name: 'Thailand', emoji: '🇹🇭' },
+  { name: 'Turkey', emoji: '🇹🇷' }, { name: 'Ukraine', emoji: '🇺🇦' },
+  { name: 'United Kingdom', emoji: '🇬🇧' }, { name: 'United States', emoji: '🇺🇸' },
+  { name: 'Vietnam', emoji: '🇻🇳' }, { name: 'Serbia', emoji: '🇷🇸' },
+];
 
 const DELAY_LABELS: Record<PostDelay, string> = {
   now: 'Post Immediately',
@@ -53,6 +85,11 @@ export default function ProfileScreen() {
   const [editUsername, setEditUsername] = useState(loggedInUser?.username ?? '');
   const [editBio, setEditBio] = useState(loggedInUser?.bio ?? '');
   const [editAvatar, setEditAvatar] = useState(loggedInUser?.avatarUri ?? null);
+
+  // Countries
+  const [stamps, setStamps] = useState(() => [...mockStamps]);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
 
   const displayName = loggedInUser?.name || user.displayName;
   const rawUsername = loggedInUser?.username || user.username;
@@ -232,26 +269,29 @@ export default function ProfileScreen() {
             <Text style={styles.editBtnText}>✏️  Edit Profile</Text>
           </TouchableOpacity>
 
-          {/* Stats row */}
-          <View style={styles.statsRow}>
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{mockFollowers.length}</Text>
-              <Text style={styles.statLabel}>Followers</Text>
+          {/* Stats rows */}
+          <View style={styles.statsBlock}>
+            <View style={styles.statsRow}>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{mockFollowers.length}</Text>
+                <Text style={styles.statLabel}>Followers</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{mockFollowing.length}</Text>
+                <Text style={styles.statLabel}>Following</Text>
+              </View>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{mockFollowing.length}</Text>
-              <Text style={styles.statLabel}>Following</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{user.countriesVisited.length}</Text>
-              <Text style={styles.statLabel}>Countries</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{savedPosts.length}</Text>
-              <Text style={styles.statLabel}>Saved</Text>
+            <View style={[styles.statsRow, { marginTop: 1 }]}>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{stamps.length}</Text>
+                <Text style={styles.statLabel}>Countries</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{savedPosts.length}</Text>
+                <Text style={styles.statLabel}>Saved</Text>
+              </View>
             </View>
           </View>
 
@@ -274,19 +314,82 @@ export default function ProfileScreen() {
           </View>
 
           {/* Travel Passport */}
-          <Text style={styles.sectionTitle}>✈️ Travel Passport</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>✈️ Travel Passport</Text>
+            <TouchableOpacity onPress={() => { setCountrySearch(''); setShowCountryPicker(true); }} style={styles.addCountryBtn}>
+              <Text style={styles.addCountryBtnText}>+ Add Country</Text>
+            </TouchableOpacity>
+          </View>
           <GlassCard style={styles.passportCard}>
             <Text style={styles.passportHeader}>Visited Countries</Text>
+            {stamps.length === 0 && (
+              <Text style={styles.noCountriesText}>Tap "+ Add Country" to log your travels 🌍</Text>
+            )}
             <View style={styles.stampsGrid}>
-              {mockStamps.map((stamp) => (
-                <View key={stamp.country} style={styles.stamp}>
+              {stamps.map((stamp) => (
+                <TouchableOpacity
+                  key={stamp.country}
+                  style={styles.stamp}
+                  onLongPress={() => {
+                    Alert.alert('Remove country', `Remove ${stamp.country}?`, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Remove', style: 'destructive', onPress: () => setStamps((prev) => prev.filter((s) => s.country !== stamp.country)) },
+                    ]);
+                  }}
+                >
                   <Text style={styles.stampEmoji}>{stamp.emoji}</Text>
                   <Text style={styles.stampCountry}>{stamp.country}</Text>
                   <Text style={styles.stampDate}>{stamp.visitedAt}</Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </GlassCard>
+
+          {/* Country Picker Modal */}
+          <Modal visible={showCountryPicker} animationType="slide" presentationStyle="pageSheet">
+            <View style={styles.pickerModal}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>Add Country</Text>
+                <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
+                  <Text style={styles.pickerClose}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.pickerSearch}>
+                <Text style={{ fontSize: 16 }}>🔍</Text>
+                <TextInput
+                  style={styles.pickerSearchInput}
+                  placeholder="Search countries..."
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={countrySearch}
+                  onChangeText={setCountrySearch}
+                  autoFocus
+                />
+              </View>
+              <FlatList
+                data={ALL_COUNTRIES.filter((c) =>
+                  c.name.toLowerCase().includes(countrySearch.toLowerCase()) &&
+                  !stamps.find((s) => s.country === c.name)
+                )}
+                keyExtractor={(item) => item.name}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.pickerItem}
+                    onPress={() => {
+                      const now = new Date();
+                      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                      setStamps((prev) => [...prev, { country: item.name, emoji: item.emoji, visitedAt: month }]);
+                      setShowCountryPicker(false);
+                    }}
+                  >
+                    <Text style={styles.pickerItemEmoji}>{item.emoji}</Text>
+                    <Text style={styles.pickerItemName}>{item.name}</Text>
+                    <Text style={styles.pickerItemAdd}>+</Text>
+                  </TouchableOpacity>
+                )}
+                keyboardShouldPersistTaps="handled"
+              />
+            </View>
+          </Modal>
 
           {/* Saved Posts */}
           {savedPosts.length > 0 && (
@@ -435,17 +538,19 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.lg,
   },
+  statsBlock: {
+    marginBottom: theme.spacing.lg,
+    borderRadius: theme.borderRadius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-around',
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.xl,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    gap: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
   },
   stat: {
     alignItems: 'center',
@@ -471,6 +576,91 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     ...theme.typography.h2,
     marginBottom: theme.spacing.sm,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.sm,
+  },
+  addCountryBtn: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  addCountryBtnText: {
+    color: theme.colors.primaryLight,
+    ...theme.typography.caption,
+    fontWeight: '700',
+  },
+  noCountriesText: {
+    color: theme.colors.textMuted,
+    ...theme.typography.body,
+    textAlign: 'center',
+    paddingVertical: theme.spacing.md,
+  },
+  pickerModal: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  pickerTitle: {
+    color: theme.colors.text,
+    ...theme.typography.h3,
+  },
+  pickerClose: {
+    color: theme.colors.primaryLight,
+    ...theme.typography.body,
+    fontWeight: '600',
+  },
+  pickerSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.full,
+    margin: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: theme.spacing.sm,
+  },
+  pickerSearchInput: {
+    flex: 1,
+    color: theme.colors.text,
+    ...theme.typography.body,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    gap: theme.spacing.md,
+  },
+  pickerItemEmoji: {
+    fontSize: 24,
+  },
+  pickerItemName: {
+    flex: 1,
+    color: theme.colors.text,
+    ...theme.typography.body,
+  },
+  pickerItemAdd: {
+    color: theme.colors.primaryLight,
+    fontSize: 22,
+    fontWeight: '300',
   },
   badgeRow: {
     flexDirection: 'row',
