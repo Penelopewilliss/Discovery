@@ -48,6 +48,7 @@ export default function CreatePostScreen() {
   const [hideStay, setHideStay] = useState(true);
   const [mediaUri, setMediaUri] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'photo' | 'video' | null>(null);
+  const [reactionsEnabled, setReactionsEnabled] = useState(true);
 
   const pickMedia = async (source: 'library' | 'camera', type: 'photo' | 'video') => {
     const perm = source === 'camera'
@@ -116,6 +117,9 @@ export default function CreatePostScreen() {
       createdAt: new Date().toISOString(),
       liked: false,
       saved: false,
+      reactions: {},
+      userReaction: null,
+      reactionsEnabled,
     };
 
     addPost(newPost);
@@ -138,6 +142,7 @@ export default function CreatePostScreen() {
     setHideExact(true);
     setBlurLocation(false);
     setHideStay(true);
+    setReactionsEnabled(true);
     setMediaUri(null);
     setMediaType(null);
   };
@@ -359,6 +364,18 @@ export default function CreatePostScreen() {
               <Switch
                 value={hideStay}
                 onValueChange={setHideStay}
+                trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+            <View style={[styles.toggleRow, styles.toggleBorder]}>
+              <View style={styles.toggleInfo}>
+                <Text style={styles.toggleLabel}>Allow Reactions</Text>
+                <Text style={styles.toggleSub}>Let others react with emoji to your post</Text>
+              </View>
+              <Switch
+                value={reactionsEnabled}
+                onValueChange={setReactionsEnabled}
                 trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
                 thumbColor="#fff"
               />

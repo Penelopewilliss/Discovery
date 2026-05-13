@@ -64,6 +64,9 @@ export interface Post {
   createdAt: string;
   liked: boolean;
   saved: boolean;
+  reactions: Record<string, number>;
+  userReaction: string | null;
+  reactionsEnabled: boolean;
 }
 
 export interface Place {

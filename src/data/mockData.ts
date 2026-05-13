@@ -48,6 +48,9 @@ export let mockPosts: Post[] = [
     createdAt: '2026-05-10T10:00:00Z',
     liked: false,
     saved: false,
+    reactions: { '🔥': 42, '❤️': 18 },
+    userReaction: null,
+    reactionsEnabled: true,
   },
   {
     id: 'post_2',
@@ -70,6 +73,9 @@ export let mockPosts: Post[] = [
     createdAt: '2026-05-11T03:22:00Z',
     liked: true,
     saved: true,
+    reactions: { '❤️': 89, '🔥': 56, '✈️': 12 },
+    userReaction: null,
+    reactionsEnabled: true,
   },
   {
     id: 'post_3',
@@ -92,6 +98,9 @@ export let mockPosts: Post[] = [
     createdAt: '2026-05-09T17:00:00Z',
     liked: false,
     saved: false,
+    reactions: { '🌍': 33, '❤️': 27 },
+    userReaction: null,
+    reactionsEnabled: true,
   },
   {
     id: 'post_4',
@@ -114,6 +123,9 @@ export let mockPosts: Post[] = [
     createdAt: '2026-05-08T20:00:00Z',
     liked: false,
     saved: false,
+    reactions: { '❤️': 104, '😮': 19, '🔥': 38 },
+    userReaction: null,
+    reactionsEnabled: true,
   },
   {
     id: 'post_5',
@@ -136,6 +148,9 @@ export let mockPosts: Post[] = [
     createdAt: '2026-05-07T16:00:00Z',
     liked: false,
     saved: true,
+    reactions: { '❤️': 61, '✈️': 22, '🔥': 15 },
+    userReaction: null,
+    reactionsEnabled: true,
   },
   {
     id: 'post_6',
@@ -158,6 +173,9 @@ export let mockPosts: Post[] = [
     createdAt: '2026-05-06T08:00:00Z',
     liked: false,
     saved: false,
+    reactions: { '😮': 44, '🔥': 71, '❤️': 33 },
+    userReaction: null,
+    reactionsEnabled: true,
   },
 ];
 
@@ -391,6 +409,25 @@ export function toggleSave(postId: string): void {
   mockPosts = mockPosts.map((p) => {
     if (p.id !== postId) return p;
     return { ...p, saved: !p.saved };
+  });
+}
+
+export function toggleReaction(postId: string, emoji: string): void {
+  mockPosts = mockPosts.map((p) => {
+    if (p.id !== postId) return p;
+    const reactions = { ...p.reactions };
+    const prev = p.userReaction;
+    // Remove old reaction
+    if (prev) {
+      reactions[prev] = Math.max(0, (reactions[prev] || 1) - 1);
+      if (reactions[prev] === 0) delete reactions[prev];
+    }
+    // Add new reaction (or clear if tapping same one)
+    const userReaction = prev === emoji ? null : emoji;
+    if (userReaction) {
+      reactions[userReaction] = (reactions[userReaction] || 0) + 1;
+    }
+    return { ...p, reactions, userReaction };
   });
 }
 

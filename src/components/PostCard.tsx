@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  Share,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Post, PostDelay } from '../types';
 import { theme } from '../theme';
-import { toggleLike, toggleSave } from '../data/mockData';
+import { toggleLike, toggleSave, toggleReaction } from '../data/mockData';
 
 const { width } = Dimensions.get('window');
 
@@ -45,6 +46,11 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const [liked, setLiked] = useState(post.liked);
   const [saved, setSaved] = useState(post.saved);
   const [likes, setLikes] = useState(post.likes);
+  const [reactions, setReactions] = useState(post.reactions);
+  const [userReaction, setUserReaction] = useState(post.userReaction);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+
+  const REACTION_EMOJIS = ['❤️', '🔥', '😮', '😂', '✈️', '🌍'];
 
   const handleLike = () => {
     toggleLike(post.id);
@@ -56,6 +62,30 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const handleSave = () => {
     toggleSave(post.id);
     setSaved((prev) => !prev);
+    onUpdate();
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `Check out this travel post on TRAVLORA!\n\n"${post.caption}"\n\n📍 ${post.locationArea}`,
+        title: 'TRAVLORA',
+      });
+    } catch (_) {}
+  };
+
+  const handleReaction = (emoji: string) => {
+    toggleReaction(post.id, emoji);
+    const newReactions = { ...reactions };
+    if (userReaction) {
+      newReactions[userReaction] = Math.max(0, (newReactions[userReaction] || 1) - 1);
+      if (newReactions[userReaction] === 0) delete newReactions[userReaction];
+    }
+    const next = userReaction === emoji ? null : emoji;
+    if (next) newReactions[next] = (newReactions[next] || 0) + 1;
+    setReactions(newReactions);
+    setUserReaction(next);
+    setShowReactionPicker(false);
     onUpdate();
   };
 
@@ -126,16 +156,50 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
           <Text style={styles.actionCount}>{post.comments}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionBtn}>
+        {post.reactionsEnabled && (
+          <TouchableOpacity style={styles.actionBtn} onPress={() => setShowReactionPicker((v) => !v)}>
+            <Text style={styles.actionIcon}>{userReaction ?? '😊'}</Text>
+            <Text style={styles.actionCount}>React</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
           <Text style={styles.actionIcon}>📤</Text>
           <Text style={styles.actionCount}>Share</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtn} onPress={handleSave}>
-          <Text style={[styles.actionIcon]}>{saved ? '🔖' : '🏷️'}</Text>
+          <Text style={styles.actionIcon}>{saved ? '🔖' : '🏷️'}</Text>
           <Text style={styles.actionCount}>{saved ? 'Saved' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Reaction picker */}
+      {showReactionPicker && post.reactionsEnabled && (
+        <View style={styles.reactionPicker}>
+          {REACTION_EMOJIS.map((emoji) => (
+            <TouchableOpacity
+              key={emoji}
+              onPress={() => handleReaction(emoji)}
+              style={[styles.reactionOption, userReaction === emoji && styles.reactionOptionActive]}
+            >
+              <Text style={styles.reactionOptionEmoji}>{emoji}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Reaction counts */}
+      {post.reactionsEnabled && Object.keys(reactions).length > 0 && (
+        <View style={styles.reactionCounts}>
+          {Object.entries(reactions).map(([emoji, count]) => (
+            <View key={emoji} style={[styles.reactionCount, userReaction === emoji && styles.reactionCountActive]}>
+              <Text style={styles.reactionCountEmoji}>{emoji}</Text>
+              <Text style={styles.reactionCountText}>{count}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -267,5 +331,59 @@ const styles = StyleSheet.create({
   actionCount: {
     color: theme.colors.textMuted,
     ...theme.typography.caption,
+  },
+  reactionPicker: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+    gap: theme.spacing.xs,
+  },
+  reactionOption: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.glass,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionOptionActive: {
+    borderColor: theme.colors.primary,
+    backgroundColor: 'rgba(124, 92, 252, 0.2)',
+  },
+  reactionOptionEmoji: {
+    fontSize: 20,
+  },
+  reactionCounts: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+  },
+  reactionCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+  },
+  reactionCountActive: {
+    borderColor: theme.colors.primary,
+    backgroundColor: 'rgba(124, 92, 252, 0.2)',
+  },
+  reactionCountEmoji: {
+    fontSize: 13,
+  },
+  reactionCountText: {
+    color: theme.colors.textSecondary,
+    ...theme.typography.tiny,
+    fontWeight: '600',
   },
 });
