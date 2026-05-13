@@ -7,11 +7,17 @@ import {
   StyleSheet,
   Dimensions,
   Share,
+  Modal,
+  TextInput,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Post, PostDelay } from '../types';
+import { Post, PostDelay, Comment } from '../types';
 import { theme } from '../theme';
-import { toggleLike, toggleSave, toggleReaction } from '../data/mockData';
+import { toggleLike, toggleSave, toggleReaction, getComments, addComment, mockUser } from '../data/mockData';
 
 const { width } = Dimensions.get('window');
 
@@ -49,6 +55,10 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const [reactions, setReactions] = useState(post.reactions);
   const [userReaction, setUserReaction] = useState(post.userReaction);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<Comment[]>(() => getComments(post.id));
+  const [commentCount, setCommentCount] = useState(post.comments);
+  const [commentText, setCommentText] = useState('');
 
   const REACTION_EMOJIS = ['❤️', '🔥', '😮', '😂', '✈️', '🌍'];
 
@@ -86,6 +96,20 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
     setReactions(newReactions);
     setUserReaction(next);
     setShowReactionPicker(false);
+    onUpdate();
+  };
+
+  const handleSendComment = () => {
+    const text = commentText.trim();
+    if (!text) return;
+    const newComment = addComment(post.id, text, {
+      userId: mockUser.id,
+      username: mockUser.username,
+      userAvatar: mockUser.avatar,
+    });
+    setComments((prev) => [newComment, ...prev]);
+    setCommentCount((prev) => prev + 1);
+    setCommentText('');
     onUpdate();
   };
 
@@ -151,9 +175,9 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
           <Text style={styles.actionCount}>{likes.toLocaleString()}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionBtn}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => setShowComments(true)}>
           <Text style={styles.actionIcon}>💬</Text>
-          <Text style={styles.actionCount}>{post.comments}</Text>
+          <Text style={styles.actionCount}>{commentCount.toLocaleString()}</Text>
         </TouchableOpacity>
 
         {post.reactionsEnabled && (
@@ -200,6 +224,73 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
           ))}
         </View>
       )}
+
+      {/* Comments modal */}
+      <Modal
+        visible={showComments}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowComments(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowComments(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalSheet}
+        >
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <View style={styles.modalPill} />
+            <Text style={styles.modalTitle}>Comments</Text>
+            <TouchableOpacity onPress={() => setShowComments(false)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Comment list */}
+          <FlatList
+            data={comments}
+            keyExtractor={(c) => c.id}
+            style={styles.commentList}
+            contentContainerStyle={{ padding: theme.spacing.md, gap: theme.spacing.md }}
+            ListEmptyComponent={
+              <Text style={styles.emptyComments}>No comments yet. Be the first! 💬</Text>
+            }
+            renderItem={({ item }) => (
+              <View style={styles.commentRow}>
+                <Image source={{ uri: item.userAvatar }} style={styles.commentAvatar} />
+                <View style={styles.commentBubble}>
+                  <Text style={styles.commentUsername}>@{item.username}</Text>
+                  <Text style={styles.commentText}>{item.text}</Text>
+                </View>
+              </View>
+            )}
+          />
+
+          {/* Input */}
+          <View style={styles.commentInputRow}>
+            <Image source={{ uri: mockUser.avatar }} style={styles.commentAvatar} />
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Write a comment…"
+              placeholderTextColor={theme.colors.textMuted}
+              value={commentText}
+              onChangeText={setCommentText}
+              multiline
+              maxLength={300}
+            />
+            <TouchableOpacity
+              style={[styles.sendBtn, !commentText.trim() && styles.sendBtnDisabled]}
+              onPress={handleSendComment}
+              disabled={!commentText.trim()}
+            >
+              <Text style={styles.sendBtnText}>Send</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -385,5 +476,123 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     ...theme.typography.tiny,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalSheet: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '75%',
+    borderTopWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  modalPill: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.border,
+    position: 'absolute',
+    top: 8,
+    alignSelf: 'center',
+    left: '50%',
+    marginLeft: -18,
+  },
+  modalTitle: {
+    flex: 1,
+    textAlign: 'center',
+    color: theme.colors.text,
+    ...theme.typography.h3,
+  },
+  modalClose: {
+    color: theme.colors.textMuted,
+    fontSize: 16,
+    paddingLeft: theme.spacing.sm,
+  },
+  commentList: {
+    flexGrow: 0,
+    maxHeight: 380,
+  },
+  emptyComments: {
+    color: theme.colors.textMuted,
+    ...theme.typography.body,
+    textAlign: 'center',
+    marginTop: theme.spacing.lg,
+  },
+  commentRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    alignItems: 'flex-start',
+  },
+  commentAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+    flexShrink: 0,
+  },
+  commentBubble: {
+    flex: 1,
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    padding: theme.spacing.sm,
+  },
+  commentUsername: {
+    color: theme.colors.primaryLight,
+    ...theme.typography.caption,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  commentText: {
+    color: theme.colors.textSecondary,
+    ...theme.typography.body,
+    lineHeight: 18,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: theme.spacing.sm,
+    padding: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    color: theme.colors.text,
+    ...theme.typography.body,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 8,
+    maxHeight: 100,
+  },
+  sendBtn: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+  },
+  sendBtnDisabled: {
+    opacity: 0.4,
+  },
+  sendBtnText: {
+    color: '#fff',
+    ...theme.typography.caption,
+    fontWeight: '700',
   },
 });

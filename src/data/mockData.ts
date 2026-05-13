@@ -1,4 +1,4 @@
-import { Post, Place, Group, User, Stamp } from '../types';
+import { Post, Place, Group, User, Stamp, Comment } from '../types';
 
 export const mockUser: User = {
   id: 'user_1',
@@ -447,4 +447,66 @@ export function toggleJoinGroup(groupId: string): void {
     group.joined = !group.joined;
     group.memberCount += group.joined ? 1 : -1;
   }
+}
+
+export let mockComments: Comment[] = [
+  {
+    id: 'c1', postId: 'post_1',
+    userId: 'user_2', username: 'kai.wanderlust',
+    userAvatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&q=80',
+    text: 'Those lagoons are absolutely unreal 😍 adding Albania to my list!',
+    createdAt: '2026-05-10T11:00:00Z',
+  },
+  {
+    id: 'c2', postId: 'post_1',
+    userId: 'user_3', username: 'sofia.roams',
+    userAvatar: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=100&q=80',
+    text: 'Ksamil is so underrated. Did you take a boat out to the small islands?',
+    createdAt: '2026-05-10T12:30:00Z',
+  },
+  {
+    id: 'c3', postId: 'post_2',
+    userId: 'user_4', username: 'marco.escapes',
+    userAvatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&q=80',
+    text: 'Tokyo 3am hits different 🍜 the konbini run after midnight is essential',
+    createdAt: '2026-05-11T04:10:00Z',
+  },
+  {
+    id: 'c4', postId: 'post_3',
+    userId: 'user_5', username: 'luna.offpath',
+    userAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&q=80',
+    text: 'The light here at golden hour is something else 🌾 Bali keeps calling me back too',
+    createdAt: '2026-05-09T18:00:00Z',
+  },
+  {
+    id: 'c5', postId: 'post_4',
+    userId: 'user_6', username: 'theo.highland',
+    userAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&q=80',
+    text: 'Worth every cliché tbh. Montmartre at sunset is a different world ✨',
+    createdAt: '2026-05-08T21:00:00Z',
+  },
+];
+
+let commentCounter = 100;
+
+export function getComments(postId: string): Comment[] {
+  return mockComments.filter((c) => c.postId === postId);
+}
+
+export function addComment(postId: string, text: string, author: { userId: string; username: string; userAvatar: string }): Comment {
+  commentCounter += 1;
+  const comment: Comment = {
+    id: `c_new_${commentCounter}`,
+    postId,
+    userId: author.userId,
+    username: author.username,
+    userAvatar: author.userAvatar,
+    text,
+    createdAt: new Date().toISOString(),
+  };
+  mockComments = [comment, ...mockComments];
+  mockPosts = mockPosts.map((p) =>
+    p.id === postId ? { ...p, comments: p.comments + 1 } : p
+  );
+  return comment;
 }
