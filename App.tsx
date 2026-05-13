@@ -14,7 +14,10 @@ import WelcomeScreen from './src/screens/WelcomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import ProfileSetupScreen from './src/screens/ProfileSetupScreen';
-import MessagesScreen from './src/screens/MessagesScreen'; = 'welcome' | 'login' | 'signup' | 'setup' | 'app';
+import MessagesScreen from './src/screens/MessagesScreen';
+import { UserProvider, useUser } from './src/context/UserContext';
+
+type AuthState = 'welcome' | 'login' | 'signup' | 'setup' | 'app';
 
 const TABS = [
   { name: 'Home', emoji: '🏠' },
