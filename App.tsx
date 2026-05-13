@@ -96,7 +96,12 @@ function AppNavigator() {
     try {
       const stored = await AsyncStorage.getItem('@travlora_user');
       if (stored) {
-        setUser(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        // Sanitize: if username looks like an email, strip the domain
+        if (parsed.username && parsed.username.includes('@')) {
+          parsed.username = parsed.username.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || 'traveler';
+        }
+        setUser(parsed);
       } else {
         // No stored account — create a blank profile so they can set up via Edit Profile
         setUser({ name: 'Traveler', username: 'traveler', email, avatarUri: null, bio: '', homeCountry: '', interests: [] });

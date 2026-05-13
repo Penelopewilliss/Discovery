@@ -55,7 +55,8 @@ export default function ProfileScreen() {
   const [editAvatar, setEditAvatar] = useState(loggedInUser?.avatarUri ?? null);
 
   const displayName = loggedInUser?.name || user.displayName;
-  const username = loggedInUser?.username || user.username;
+  const rawUsername = loggedInUser?.username || user.username;
+  const username = rawUsername.includes('@') ? (rawUsername.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || 'traveler') : rawUsername;
   const bio = loggedInUser?.bio || user.bio;
   const avatarUri = loggedInUser?.avatarUri || user.avatar;
 
