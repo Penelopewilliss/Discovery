@@ -47,8 +47,10 @@ export default function ProfileScreen() {
   const [defaultDelay, setDefaultDelay] = useState<PostDelay>(user.defaultDelayedPosting);
   const [showDelayPicker, setShowDelayPicker] = useState(false);
 
-  // Edit profile modal
+  // Edit profile
   const [showEdit, setShowEdit] = useState(false);
+  const [editName, setEditName] = useState(loggedInUser?.name ?? '');
+  const [editUsername, setEditUsername] = useState(loggedInUser?.username ?? '');
   const [editBio, setEditBio] = useState(loggedInUser?.bio ?? '');
   const [editAvatar, setEditAvatar] = useState(loggedInUser?.avatarUri ?? null);
 
@@ -58,6 +60,8 @@ export default function ProfileScreen() {
   const avatarUri = loggedInUser?.avatarUri || user.avatar;
 
   const openEdit = () => {
+    setEditName(loggedInUser?.name ?? displayName);
+    setEditUsername(loggedInUser?.username ?? username);
     setEditBio(loggedInUser?.bio ?? '');
     setEditAvatar(loggedInUser?.avatarUri ?? null);
     setShowEdit(true);
@@ -98,8 +102,8 @@ export default function ProfileScreen() {
 
   const saveProfile = async () => {
     const updated = {
-      name: loggedInUser?.name ?? displayName,
-      username: loggedInUser?.username ?? username,
+      name: editName.trim() || displayName,
+      username: editUsername.trim().replace(/^@/, '') || username,
       email: loggedInUser?.email ?? '',
       bio: editBio.trim(),
       avatarUri: editAvatar,
@@ -107,11 +111,9 @@ export default function ProfileScreen() {
       interests: loggedInUser?.interests ?? [],
     };
     setUser(updated);
-    if (updated.email) {
-      try {
-        await AsyncStorage.setItem(`user_${updated.email}`, JSON.stringify(updated));
-      } catch (_) {}
-    }
+    try {
+      await AsyncStorage.setItem('@travlora_user', JSON.stringify(updated));
+    } catch (_) {}
     setShowEdit(false);
   };
 
@@ -160,7 +162,32 @@ export default function ProfileScreen() {
             </View>
 
             {/* Bio */}
-            <Text style={styles.editLabel}>Bio</Text>
+            <Text style={styles.editLabel}>Display Name</Text>
+            <TextInput
+              style={styles.editFieldInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Your full name"
+              placeholderTextColor={theme.colors.textMuted}
+              maxLength={50}
+            />
+
+            <Text style={[styles.editLabel, { marginTop: theme.spacing.md }]}>Username</Text>
+            <View style={styles.editUsernameRow}>
+              <Text style={styles.editAtSign}>@</Text>
+              <TextInput
+                style={[styles.editFieldInput, { flex: 1 }]}
+                value={editUsername}
+                onChangeText={(t) => setEditUsername(t.replace(/^@/, '').replace(/\s/g, '').toLowerCase())}
+                placeholder="yourusername"
+                placeholderTextColor={theme.colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={30}
+              />
+            </View>
+
+            <Text style={[styles.editLabel, { marginTop: theme.spacing.md }]}>Bio</Text>
             <TextInput
               style={styles.editBioInput}
               value={editBio}
@@ -678,6 +705,27 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: theme.spacing.sm,
+  },
+  editFieldInput: {
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    color: theme.colors.text,
+    ...theme.typography.body,
+    padding: theme.spacing.sm,
+    height: 44,
+  },
+  editUsernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  editAtSign: {
+    color: theme.colors.primaryLight,
+    ...theme.typography.body,
+    fontWeight: '700',
+    fontSize: 16,
   },
   editBioInput: {
     backgroundColor: theme.colors.glass,
