@@ -11,16 +11,18 @@ import {
   ActivityIndicator,
   Platform,
   Dimensions,
+  Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Callout, PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
 
 const SCREEN = Dimensions.get('window');
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { Place } from '../types';
-import { useUser, VisitedPlace } from '../context/UserContext';
+import { useUser, VisitedPlace, TripStop, Trip } from '../context/UserContext';
 import PlaceCard from '../components/PlaceCard';
 import GlassCard from '../components/GlassCard';
 import { PlaceCardSkeleton } from '../components/SkeletonLoader';
@@ -50,11 +52,20 @@ function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
 }
 
 export default function ExploreScreen() {
-  const { isVisited, markVisited, removeVisited } = useUser();
+  const { isVisited, markVisited, removeVisited, createTrip } = useUser();
   const [query, setQuery] = useState('');
   const [tick, setTick] = useState(0);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'map'>('map');
+
+  // Trip planner state
+  const [showTripPlanner, setShowTripPlanner] = useState(false);
+  const [tripName, setTripName] = useState('');
+  const [tripStops, setTripStops] = useState<TripStop[]>([]);
+  const [tripSearch, setTripSearch] = useState('');
+  const [tripResults, setTripResults] = useState<FsqPlace[]>([]);
+  const [tripSearchLoading, setTripSearchLoading] = useState(false);
+  const tripSearchTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const [featured, setFeatured] = useState<Place[]>([]);
   const [searchResults, setSearchResults] = useState<Place[]>([]);
@@ -96,6 +107,43 @@ export default function ExploreScreen() {
     }, 500);
     return () => clearTimeout(searchTimer.current);
   }, [query]);
+
+  // Trip destination search
+  useEffect(() => {
+    if (!tripSearch.trim()) { setTripResults([]); return; }
+    clearTimeout(tripSearchTimer.current);
+    tripSearchTimer.current = setTimeout(async () => {
+      setTripSearchLoading(true);
+      const results = await searchFsqPlaces(tripSearch);
+      setTripResults(results.filter((r) => r.geocodes?.main));
+      setTripSearchLoading(false);
+    }, 400);
+    return () => clearTimeout(tripSearchTimer.current);
+  }, [tripSearch]);
+
+  const addStop = (place: FsqPlace) => {
+    const geo = place.geocodes?.main;
+    if (!geo) return;
+    setTripStops((prev) => [
+      ...prev,
+      { name: place.name, country: place.location.country ?? place.location.locality ?? '', lat: geo.latitude, lon: geo.longitude },
+    ]);
+    setTripSearch('');
+    setTripResults([]);
+  };
+
+  const removeStop = (i: number) => setTripStops((prev) => prev.filter((_, idx) => idx !== i));
+
+  const saveTripPlan = () => {
+    if (!tripName.trim()) { Alert.alert('Name your trip first!'); return; }
+    if (tripStops.length === 0) { Alert.alert('Add at least one destination!'); return; }
+    createTrip({ id: Date.now().toString(), name: tripName.trim(), stops: tripStops, createdAt: new Date().toISOString() });
+    setShowTripPlanner(false);
+    setTripName('');
+    setTripStops([]);
+    setTripSearch('');
+    Alert.alert('✈️ Trip saved!', 'View it on your Profile under "My Trips".');
+  };
 
   const handleSelectPlace = async (place: Place) => {
     setSelectedPlace(place);
@@ -265,42 +313,64 @@ export default function ExploreScreen() {
 
       {/* Map View */}
       {viewMode === 'map' && (
-        <MapView
-          style={styles.map}
-          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-          showsUserLocation={userLocation !== null}
-          showsMyLocationButton
-          initialRegion={
-            userLocation
-              ? { latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 30, longitudeDelta: 40 }
-              : { latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }
-          }
-          customMapStyle={Platform.OS === 'android' ? darkMapStyle : undefined}
-        >
-          {featured.filter((p) => p.lat && p.lon).map((place) => {
-            const visited = isVisited(place.id);
-            return (
+        <View style={{ flex: 1 }}>
+          <MapView
+            style={StyleSheet.absoluteFillObject}
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+            showsUserLocation={userLocation !== null}
+            showsMyLocationButton
+            initialRegion={
+              userLocation
+                ? { latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 30, longitudeDelta: 40 }
+                : { latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }
+            }
+          >
+            {/* Featured destination pins */}
+            {featured.filter((p) => p.lat && p.lon).map((place) => {
+              const visited = isVisited(place.id);
+              return (
+                <Marker
+                  key={place.id}
+                  coordinate={{ latitude: place.lat!, longitude: place.lon! }}
+                  onPress={() => handleSelectPlace(place)}
+                >
+                  <View style={styles.mapPin}>
+                    <LinearGradient
+                      colors={visited ? ['#22c55e', '#16a34a'] : [theme.colors.primary, theme.colors.accent]}
+                      style={styles.mapPinInner}
+                    >
+                      <Text style={styles.mapPinEmoji}>{visited ? '✅' : '📍'}</Text>
+                    </LinearGradient>
+                  </View>
+                  <Callout onPress={() => handleSelectPlace(place)} style={styles.callout}>
+                    <Text style={styles.calloutTitle}>{place.name}</Text>
+                    <Text style={styles.calloutSub}>{place.country}{visited ? ' · Visited ✅' : ''}</Text>
+                  </Callout>
+                </Marker>
+              );
+            })}
+
+            {/* Search result pins — any place in the world */}
+            {query.trim() ? searchResults.filter((p) => p.lat && p.lon).map((place) => (
               <Marker
-                key={place.id}
+                key={`sr-${place.id}`}
                 coordinate={{ latitude: place.lat!, longitude: place.lon! }}
+                pinColor="#3b82f6"
                 onPress={() => handleSelectPlace(place)}
               >
-                <View style={styles.mapPin}>
-                  <LinearGradient
-                    colors={visited ? ['#22c55e', '#16a34a'] : [theme.colors.primary, theme.colors.accent]}
-                    style={styles.mapPinInner}
-                  >
-                    <Text style={styles.mapPinEmoji}>{visited ? '✅' : '📍'}</Text>
-                  </LinearGradient>
-                </View>
-                <Callout onPress={() => handleSelectPlace(place)} style={styles.callout}>
+                <Callout style={styles.callout}>
                   <Text style={styles.calloutTitle}>{place.name}</Text>
-                  <Text style={styles.calloutSub}>{place.country}{visited ? ' · Visited ✅' : ''}</Text>
+                  <Text style={styles.calloutSub}>{place.country}</Text>
                 </Callout>
               </Marker>
-            );
-          })}
-        </MapView>
+            )) : null}
+          </MapView>
+
+          {/* Plan Trip floating button */}
+          <TouchableOpacity style={styles.tripFab} onPress={() => setShowTripPlanner(true)}>
+            <Text style={styles.tripFabText}>✈️ Plan Trip</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Grid View */}
@@ -386,18 +456,131 @@ export default function ExploreScreen() {
           )}
         </>
       )}
+
+      {/* ═══ Trip Planner Modal ═══ */}
+      <Modal visible={showTripPlanner} animationType="slide" presentationStyle="fullScreen">
+        <View style={styles.tripModal}>
+          {/* Header */}
+          <View style={styles.tripModalHeader}>
+            <TouchableOpacity onPress={() => setShowTripPlanner(false)}>
+              <Text style={styles.tripModalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.tripModalTitle}>✈️ Plan a Trip</Text>
+            <TouchableOpacity
+              onPress={saveTripPlan}
+              disabled={!tripName.trim() || tripStops.length === 0}
+              style={{ opacity: !tripName.trim() || tripStops.length === 0 ? 0.35 : 1 }}
+            >
+              <Text style={styles.tripModalSave}>Save</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Trip name */}
+          <TextInput
+            style={styles.tripNameInput}
+            placeholder="Trip name (e.g. European Summer 🌞)"
+            placeholderTextColor={theme.colors.textMuted}
+            value={tripName}
+            onChangeText={setTripName}
+            returnKeyType="done"
+          />
+
+          {/* Live map preview — shown once stops are added */}
+          {tripStops.length > 0 && (
+            <View style={{ height: 200 }}>
+              <MapView
+                style={{ flex: 1, width: SCREEN.width }}
+                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                region={{
+                  latitude: tripStops[tripStops.length - 1].lat,
+                  longitude: tripStops[tripStops.length - 1].lon,
+                  latitudeDelta: 50,
+                  longitudeDelta: 60,
+                }}
+              >
+                {tripStops.map((stop, i) => (
+                  <Marker
+                    key={i}
+                    coordinate={{ latitude: stop.lat, longitude: stop.lon }}
+                    title={`${i + 1}. ${stop.name}`}
+                    pinColor="#6366f1"
+                  />
+                ))}
+                {tripStops.length > 1 && (
+                  <Polyline
+                    coordinates={tripStops.map((s) => ({ latitude: s.lat, longitude: s.lon }))}
+                    strokeColor={theme.colors.primary}
+                    strokeWidth={2.5}
+                    lineDashPattern={[6, 3]}
+                  />
+                )}
+              </MapView>
+            </View>
+          )}
+
+          {/* Search bar */}
+          <View style={styles.tripSearchBar}>
+            <Text style={{ fontSize: 16, marginRight: 8 }}>🔍</Text>
+            <TextInput
+              style={styles.tripSearchInput}
+              placeholder="Search any city, country or landmark..."
+              placeholderTextColor={theme.colors.textMuted}
+              value={tripSearch}
+              onChangeText={setTripSearch}
+            />
+            {tripSearchLoading && <ActivityIndicator size="small" color={theme.colors.primary} />}
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
+            {/* Search results */}
+            {tripResults.map((place) => (
+              <TouchableOpacity key={place.fsq_id} style={styles.tripResultRow} onPress={() => addStop(place)}>
+                <Text style={styles.tripResultAdd}>＋</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tripResultName}>{place.name}</Text>
+                  <Text style={styles.tripResultSub}>{place.location.country ?? place.location.locality ?? ''}</Text>
+                </View>
+                <Text style={{ fontSize: 14 }}>📍</Text>
+              </TouchableOpacity>
+            ))}
+
+            {/* Stops list */}
+            {tripResults.length === 0 && tripStops.length > 0 && (
+              <View style={styles.tripStopsSection}>
+                <Text style={styles.tripStopsLabel}>Your Journey — {tripStops.length} stop{tripStops.length > 1 ? 's' : ''}</Text>
+                {tripStops.map((stop, i) => (
+                  <View key={i} style={styles.tripStopItem}>
+                    <View style={styles.tripStopBadge}>
+                      <Text style={styles.tripStopBadgeText}>{i + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tripStopName}>{stop.name}</Text>
+                      <Text style={styles.tripStopCountry}>{stop.country}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => removeStop(i)} style={{ padding: 8 }}>
+                      <Text style={{ color: '#fc5c7d', fontSize: 18, fontWeight: '800' }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Empty hint */}
+            {tripResults.length === 0 && tripStops.length === 0 && (
+              <View style={styles.tripEmptyHint}>
+                <Text style={{ fontSize: 52, textAlign: 'center' }}>🗺️</Text>
+                <Text style={styles.tripEmptyText}>
+                  Search any city, country or landmark above to build your dream route
+                </Text>
+              </View>
+            )}
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
-
-// Dark style for MapView to match app theme
-const darkMapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#212121' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#212121' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#000000' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2c2c2c' }] },
-];
 
 const styles = StyleSheet.create({
   container: {
@@ -663,5 +846,103 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: theme.borderRadius.md,
     marginRight: theme.spacing.sm,
+  },
+  // Trip FAB
+  tripFab: {
+    position: 'absolute',
+    bottom: 28,
+    right: 16,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 13,
+    borderRadius: theme.borderRadius.full,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  tripFabText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  // Trip Planner Modal
+  tripModal: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    paddingTop: 56,
+  },
+  tripModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  tripModalCancel: { color: theme.colors.textMuted, fontSize: 15 },
+  tripModalTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '700' },
+  tripModalSave: { color: theme.colors.primary, fontSize: 15, fontWeight: '700' },
+  tripNameInput: {
+    marginHorizontal: theme.spacing.md,
+    marginVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    color: theme.colors.text,
+    padding: theme.spacing.sm,
+    fontSize: 15,
+    height: 44,
+  },
+  tripSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    paddingHorizontal: theme.spacing.sm,
+    height: 44,
+  },
+  tripSearchInput: { flex: 1, color: theme.colors.text, fontSize: 15 },
+  tripResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    gap: theme.spacing.sm,
+  },
+  tripResultAdd: { color: theme.colors.primary, fontSize: 22, fontWeight: '700', width: 24, textAlign: 'center' },
+  tripResultName: { color: theme.colors.text, fontSize: 15, fontWeight: '600' },
+  tripResultSub: { color: theme.colors.textMuted, fontSize: 13, marginTop: 2 },
+  tripStopsSection: { padding: theme.spacing.md },
+  tripStopsLabel: { color: theme.colors.text, fontSize: 15, fontWeight: '700', marginBottom: theme.spacing.md },
+  tripStopItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  tripStopBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tripStopBadgeText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  tripStopName: { color: theme.colors.text, fontSize: 15, fontWeight: '600' },
+  tripStopCountry: { color: theme.colors.textMuted, fontSize: 13, marginTop: 2 },
+  tripEmptyHint: { padding: theme.spacing.xl, alignItems: 'center', paddingTop: theme.spacing.xxl },
+  tripEmptyText: {
+    color: theme.colors.textMuted,
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: theme.spacing.md,
+    lineHeight: 22,
   },
 });

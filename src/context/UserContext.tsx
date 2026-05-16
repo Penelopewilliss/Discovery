@@ -20,6 +20,20 @@ export type VisitedPlace = {
   visitedAt: string;
 };
 
+export type TripStop = {
+  name: string;
+  country: string;
+  lat: number;
+  lon: number;
+};
+
+export type Trip = {
+  id: string;
+  name: string;
+  stops: TripStop[];
+  createdAt: string;
+};
+
 type UserContextType = {
   user: LoggedInUser | null;
   setUser: (u: LoggedInUser) => void;
@@ -27,6 +41,9 @@ type UserContextType = {
   markVisited: (place: VisitedPlace) => void;
   removeVisited: (id: string) => void;
   isVisited: (id: string) => boolean;
+  trips: Trip[];
+  createTrip: (trip: Trip) => void;
+  deleteTrip: (id: string) => void;
 };
 
 const UserContext = createContext<UserContextType>({
@@ -36,11 +53,15 @@ const UserContext = createContext<UserContextType>({
   markVisited: () => {},
   removeVisited: () => {},
   isVisited: () => false,
+  trips: [],
+  createTrip: () => {},
+  deleteTrip: () => {},
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<LoggedInUser | null>(null);
   const [visitedPlaces, setVisitedPlaces] = useState<VisitedPlace[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
 
   const markVisited = (place: VisitedPlace) => {
     setVisitedPlaces((prev) =>
@@ -54,8 +75,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const isVisited = (id: string) => visitedPlaces.some((p) => p.id === id);
 
+  const createTrip = (trip: Trip) => setTrips((prev) => [trip, ...prev]);
+  const deleteTrip = (id: string) => setTrips((prev) => prev.filter((t) => t.id !== id));
+
   return (
-    <UserContext.Provider value={{ user, setUser, visitedPlaces, markVisited, removeVisited, isVisited }}>
+    <UserContext.Provider value={{ user, setUser, visitedPlaces, markVisited, removeVisited, isVisited, trips, createTrip, deleteTrip }}>
       {children}
     </UserContext.Provider>
   );

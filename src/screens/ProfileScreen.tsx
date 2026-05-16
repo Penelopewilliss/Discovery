@@ -26,7 +26,7 @@ const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
 import { mockUser, mockStamps, mockPosts, mockFollowers, mockFollowing } from '../data/mockData';
 import GlassCard from '../components/GlassCard';
-import { useUser } from '../context/UserContext';
+import { useUser, Trip } from '../context/UserContext';
 import { PostDelay } from '../types';
 
 const ALL_COUNTRIES: { name: string; emoji: string }[] = [
@@ -77,7 +77,7 @@ const BADGE_COLORS = [
 ];
 
 export default function ProfileScreen() {
-  const { user: loggedInUser, setUser, visitedPlaces } = useUser();
+  const { user: loggedInUser, setUser, visitedPlaces, trips, deleteTrip } = useUser();
   const user = mockUser;
   const [privateProfile, setPrivateProfile] = useState(user.privateProfile);
   const [hideLocation, setHideLocation] = useState(user.hideExactLocation);
@@ -87,6 +87,7 @@ export default function ProfileScreen() {
   const [showFollowingList, setShowFollowingList] = useState(false);
   const [selectedSavedPost, setSelectedSavedPost] = useState<typeof savedPosts[0] | null>(null);
   const [showTravelMap, setShowTravelMap] = useState(false);
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
 
   // Edit profile
   const [showEdit, setShowEdit] = useState(false);
@@ -419,6 +420,56 @@ export default function ProfileScreen() {
             </GlassCard>
           </TouchableOpacity>
 
+          {/* My Trips — planned journeys */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>✈️ My Trips</Text>
+          </View>
+          {trips.length === 0 ? (
+            <GlassCard style={styles.tripsEmptyCard}>
+              <Text style={styles.tripsEmptyEmoji}>✈️</Text>
+              <Text style={styles.tripsEmptyTitle}>No trips planned yet</Text>
+              <Text style={styles.tripsEmptySub}>
+                Go to Explore → tap the map → press “✈️ Plan Trip” to build your first journey.
+              </Text>
+            </GlassCard>
+          ) : (
+            trips.map((trip) => (
+              <TouchableOpacity key={trip.id} onPress={() => setSelectedTrip(trip)} activeOpacity={0.85}>
+                <GlassCard style={styles.tripCard}>
+                  <View style={styles.tripCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tripCardName}>{trip.name}</Text>
+                      <Text style={styles.tripCardMeta}>
+                        {trip.stops.length} stop{trip.stops.length !== 1 ? 's' : ''} · {new Set(trip.stops.map((s) => s.country)).size} countr{new Set(trip.stops.map((s) => s.country)).size !== 1 ? 'ies' : 'y'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => Alert.alert('Delete trip', `Delete “${trip.name}”?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Delete', style: 'destructive', onPress: () => deleteTrip(trip.id) },
+                      ])}
+                      style={styles.tripCardDelete}
+                    >
+                      <Text style={{ color: theme.colors.textMuted, fontSize: 18 }}>⋮</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.tripCardRoute}>
+                    {trip.stops.slice(0, 4).map((stop, i) => (
+                      <View key={i} style={styles.tripCardStop}>
+                        {i > 0 && <Text style={styles.tripCardArrow}>→</Text>}
+                        <Text style={styles.tripCardStopName} numberOfLines={1}>{stop.name}</Text>
+                      </View>
+                    ))}
+                    {trip.stops.length > 4 && (
+                      <Text style={styles.tripCardMore}>+{trip.stops.length - 4}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.tripCardTap}>Tap to view on map →</Text>
+                </GlassCard>
+              </TouchableOpacity>
+            ))
+          )}
+
           {/* Country Picker Modal */}
           <Modal visible={showCountryPicker} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.pickerModal}>
@@ -713,6 +764,80 @@ export default function ProfileScreen() {
             </View>
           )}
         </View>
+      </Modal>
+
+      {/* ═══ Trip Detail Modal ═══ */}
+      <Modal visible={selectedTrip !== null} animationType="slide" presentationStyle="fullScreen">
+        {selectedTrip && (
+          <View style={styles.tripDetailModal}>
+            <View style={styles.tripModalHeader}>
+              <TouchableOpacity onPress={() => setSelectedTrip(null)}>
+                <Text style={styles.tripModalClose}>✕ Close</Text>
+              </TouchableOpacity>
+              <Text style={styles.tripModalName} numberOfLines={1}>{selectedTrip.name}</Text>
+              <TouchableOpacity
+                onPress={async () => {
+                  const stops = selectedTrip.stops.map((s, i) => `${i + 1}. ${s.name}, ${s.country}`).join('\n');
+                  await Share.share({
+                    message: `✈️ ${selectedTrip.name}\n\nMy planned route:\n${stops}\n\nPlanning with Discovery 🌍`,
+                  });
+                }}
+              >
+                <Text style={styles.tripModalShare}>📤</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Map with route */}
+            <View style={{ height: 300 }}>
+              <MapView
+                style={{ flex: 1 }}
+                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                region={{
+                  latitude: selectedTrip.stops[0]?.lat ?? 20,
+                  longitude: selectedTrip.stops[0]?.lon ?? 10,
+                  latitudeDelta: 60,
+                  longitudeDelta: 70,
+                }}
+              >
+                {selectedTrip.stops.map((stop, i) => (
+                  <Marker
+                    key={i}
+                    coordinate={{ latitude: stop.lat, longitude: stop.lon }}
+                    title={`${i + 1}. ${stop.name}`}
+                    pinColor="#6366f1"
+                  />
+                ))}
+                {selectedTrip.stops.length > 1 && (
+                  <Polyline
+                    coordinates={selectedTrip.stops.map((s) => ({ latitude: s.lat, longitude: s.lon }))}
+                    strokeColor={theme.colors.primary}
+                    strokeWidth={3}
+                    lineDashPattern={[8, 4]}
+                  />
+                )}
+              </MapView>
+            </View>
+
+            {/* Stop list */}
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: theme.spacing.md }}>
+              <Text style={styles.tripDetailStopsLabel}>
+                {selectedTrip.stops.length} stop{selectedTrip.stops.length !== 1 ? 's' : ''}
+              </Text>
+              {selectedTrip.stops.map((stop, i) => (
+                <View key={i} style={styles.tripDetailStopRow}>
+                  <View style={styles.tripDetailBadge}>
+                    <Text style={styles.tripDetailBadgeText}>{i + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tripDetailStopName}>{stop.name}</Text>
+                    <Text style={styles.tripDetailStopCountry}>{stop.country}</Text>
+                  </View>
+                </View>
+              ))}
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </View>
+        )}
       </Modal>
     </SafeAreaView>
   );
@@ -1348,4 +1473,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
+  // My Trips section
+  tripsEmptyCard: { alignItems: 'center', padding: theme.spacing.xl, marginBottom: theme.spacing.md },
+  tripsEmptyEmoji: { fontSize: 48, marginBottom: theme.spacing.sm },
+  tripsEmptyTitle: { color: theme.colors.text, fontWeight: '700', fontSize: 16, marginBottom: 6 },
+  tripsEmptySub: { color: theme.colors.textMuted, fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  tripCard: { marginBottom: theme.spacing.sm },
+  tripCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  tripCardName: { color: theme.colors.text, fontWeight: '700', fontSize: 16 },
+  tripCardMeta: { color: theme.colors.textMuted, fontSize: 13, marginTop: 2 },
+  tripCardDelete: { padding: 8, marginLeft: 8 },
+  tripCardRoute: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginBottom: 8 },
+  tripCardStop: { flexDirection: 'row', alignItems: 'center' },
+  tripCardArrow: { color: theme.colors.textMuted, marginHorizontal: 4, fontSize: 13 },
+  tripCardStopName: { color: theme.colors.textSecondary, fontSize: 13, maxWidth: 80 },
+  tripCardMore: { color: theme.colors.primary, fontSize: 13, fontWeight: '700', marginLeft: 4 },
+  tripCardTap: { color: theme.colors.textMuted, fontSize: 12 },
+  // Trip Detail Modal
+  tripDetailModal: { flex: 1, backgroundColor: theme.colors.background, paddingTop: 56 },
+  tripModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  tripModalClose: { color: theme.colors.textMuted, fontSize: 15 },
+  tripModalName: { color: theme.colors.text, fontWeight: '700', fontSize: 16, flex: 1, textAlign: 'center', marginHorizontal: 8 },
+  tripModalShare: { fontSize: 22 },
+  tripDetailStopsLabel: { color: theme.colors.text, fontWeight: '700', fontSize: 15, marginBottom: theme.spacing.md },
+  tripDetailStopRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, marginBottom: theme.spacing.md },
+  tripDetailBadge: { width: 36, height: 36, borderRadius: 18, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' },
+  tripDetailBadgeText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  tripDetailStopName: { color: theme.colors.text, fontSize: 15, fontWeight: '600' },
+  tripDetailStopCountry: { color: theme.colors.textMuted, fontSize: 13, marginTop: 2 },
 });
