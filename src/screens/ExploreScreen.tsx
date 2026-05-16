@@ -75,6 +75,7 @@ export default function ExploreScreen() {
   const [detailPhotos, setDetailPhotos] = useState<string[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [mapContainerHeight, setMapContainerHeight] = useState(0);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
   const searchAbortRef = useRef<AbortController>();
 
@@ -340,9 +341,13 @@ export default function ExploreScreen() {
 
       {/* Map View */}
       {viewMode === 'map' && (
-        <View style={{ flex: 1, width: SCREEN.width }}>
+        <View
+          style={{ flex: 1, width: SCREEN.width }}
+          onLayout={(e) => setMapContainerHeight(e.nativeEvent.layout.height)}
+        >
+          {mapContainerHeight > 0 && (
           <MapView
-            style={styles.map}
+            style={{ width: SCREEN.width, height: mapContainerHeight }}
             showsUserLocation={userLocation !== null}
             showsMyLocationButton
             initialRegion={
@@ -391,6 +396,7 @@ export default function ExploreScreen() {
               </Marker>
             )) : null}
           </MapView>
+          )}
 
           {/* Plan Trip floating button */}
           <TouchableOpacity style={styles.tripFab} onPress={() => setShowTripPlanner(true)}>
