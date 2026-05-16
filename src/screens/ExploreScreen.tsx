@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,28 +8,40 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Marker, Callout } from 'react-native-maps';
 import { theme } from '../theme';
-import { mockPlaces } from '../data/mockData';
 import { Place } from '../types';
 import PlaceCard from '../components/PlaceCard';
 import GlassCard from '../components/GlassCard';
 import { PlaceCardSkeleton } from '../components/SkeletonLoader';
+import {
+  getFeaturedPlaces,
+  searchFsqPlaces,
+  getPlacePhotos,
+  getPlaceTips,
+  FsqPlace,
+  FsqPlaceWithPhoto,
+} from '../utils/foursquare';
 
-// Approximate coordinates for each mock place
-const PLACE_COORDS: Record<string, { latitude: number; longitude: number }> = {
-  place_bali: { latitude: -8.3405, longitude: 115.092 },
-  place_albania: { latitude: 41.1533, longitude: 20.1683 },
-  place_paris: { latitude: 48.8566, longitude: 2.3522 },
-  place_tokyo: { latitude: 35.6762, longitude: 139.6503 },
-  place_lisbon: { latitude: 38.7169, longitude: -9.1399 },
-  place_marrakech: { latitude: 31.6295, longitude: -7.9811 },
-  place_patagonia: { latitude: -51.6230, longitude: -69.2168 },
-  place_kyoto: { latitude: 35.0116, longitude: 135.7681 },
-};
+function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
+  return {
+    id: raw.fsq_id,
+    name: raw.name,
+    country: raw.location.country ?? raw.location.locality ?? '',
+    coverImage: photoUrl,
+    followersCount: raw.stats?.total_ratings ?? 1000,
+    trendingPosts: [],
+    travelTips: [],
+    safetyNotes: [],
+    followed: false,
+    lat: raw.geocodes?.main?.latitude,
+    lon: raw.geocodes?.main?.longitude,
+  };
+}
 
 export default function ExploreScreen() {
   const [query, setQuery] = useState('');
@@ -37,24 +49,70 @@ export default function ExploreScreen() {
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
 
-  const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
+  const [featured, setFeatured] = useState<Place[]>([]);
+  const [searchResults, setSearchResults] = useState<Place[]>([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [detailTips, setDetailTips] = useState<string[]>([]);
+  const [detailPhotos, setDetailPhotos] = useState<string[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const filtered = query.trim()
-    ? mockPlaces.filter(
-        (p) =>
-          p.name.toLowerCase().includes(query.toLowerCase()) ||
-          p.country.toLowerCase().includes(query.toLowerCase())
-      )
-    : mockPlaces;
+  // Load featured destinations on mount
+  useEffect(() => {
+    getFeaturedPlaces().then((results: FsqPlaceWithPhoto[]) => {
+      setFeatured(results.map((r) => fsqToPlace(r, r.photoUrl)));
+      setFeaturedLoading(false);
+    });
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(async () => {
+      setSearchLoading(true);
+      const results = await searchFsqPlaces(query);
+      setSearchResults(results.map((r) => fsqToPlace(r, '')));
+      setSearchLoading(false);
+    }, 500);
+    return () => clearTimeout(searchTimer.current);
+  }, [query]);
+
+  const handleSelectPlace = async (place: Place) => {
+    setSelectedPlace(place);
+    setDetailTips([]);
+    setDetailPhotos([]);
+    setDetailLoading(true);
+    const [photos, tips] = await Promise.all([
+      getPlacePhotos(place.id),
+      getPlaceTips(place.id),
+    ]);
+    setDetailPhotos(photos);
+    setDetailTips(tips);
+    setDetailLoading(false);
+  };
+
+  const displayPlaces = query.trim() ? searchResults : featured;
 
   if (selectedPlace) {
-    const place = mockPlaces.find((p) => p.id === selectedPlace.id) ?? selectedPlace;
+    const heroImage = detailPhotos[0] ?? selectedPlace.coverImage;
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScrollView showsVerticalScrollIndicator={false}>
           {/* Hero */}
           <View style={styles.heroContainer}>
-            <Image source={{ uri: place.coverImage }} style={styles.heroImage} resizeMode="cover" />
+            {heroImage ? (
+              <Image source={{ uri: heroImage }} style={styles.heroImage} resizeMode="cover" />
+            ) : (
+              <LinearGradient
+                colors={[theme.colors.primary, theme.colors.accent]}
+                style={styles.heroImage}
+              />
+            )}
             <LinearGradient
               colors={['transparent', theme.colors.background]}
               style={styles.heroGradient}
@@ -63,31 +121,56 @@ export default function ExploreScreen() {
               <Text style={styles.backText}>← Back</Text>
             </TouchableOpacity>
             <View style={styles.heroContent}>
-              <Text style={styles.heroName}>{place.name}</Text>
-              <Text style={styles.heroCountry}>{place.country}</Text>
+              <Text style={styles.heroName}>{selectedPlace.name}</Text>
+              <Text style={styles.heroCountry}>{selectedPlace.country}</Text>
               <Text style={styles.heroFollowers}>
-                👥 {place.followersCount.toLocaleString()} followers
+                👥 {selectedPlace.followersCount.toLocaleString()} check-ins
               </Text>
             </View>
           </View>
 
           <View style={styles.detailContent}>
-            {/* Travel Tips */}
-            <Text style={styles.sectionTitle}>✈️ Travel Tips</Text>
-            {place.travelTips.map((tip, i) => (
-              <GlassCard key={i} style={styles.tipCard}>
-                <Text style={styles.tipText}>• {tip}</Text>
-              </GlassCard>
-            ))}
+            {detailLoading ? (
+              <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 24 }} />
+            ) : (
+              <>
+                {/* Extra photos strip */}
+                {detailPhotos.length > 1 && (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={{ marginBottom: theme.spacing.lg }}
+                  >
+                    {detailPhotos.slice(1).map((uri, i) => (
+                      <Image
+                        key={i}
+                        source={{ uri }}
+                        style={styles.extraPhoto}
+                        resizeMode="cover"
+                      />
+                    ))}
+                  </ScrollView>
+                )}
 
-            {/* Safety Notes */}
-            <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>🛡️ Safety Notes</Text>
-            {place.safetyNotes.map((note, i) => (
-              <GlassCard key={i} style={[styles.tipCard, styles.safetyCard]}>
-                <Text style={styles.tipText}>• {note}</Text>
-              </GlassCard>
-            ))}
+                {/* Visitor Tips from Foursquare */}
+                {detailTips.length > 0 && (
+                  <>
+                    <Text style={styles.sectionTitle}>💬 Visitor Tips</Text>
+                    {detailTips.map((tip, i) => (
+                      <GlassCard key={i} style={styles.tipCard}>
+                        <Text style={styles.tipText}>• {tip}</Text>
+                      </GlassCard>
+                    ))}
+                  </>
+                )}
 
+                {detailTips.length === 0 && !detailLoading && (
+                  <GlassCard style={styles.tipCard}>
+                    <Text style={styles.tipText}>No tips yet — be the first to visit! 🌍</Text>
+                  </GlassCard>
+                )}
+              </>
+            )}
             <View style={{ height: theme.spacing.xxl }} />
           </View>
         </ScrollView>
@@ -146,90 +229,110 @@ export default function ExploreScreen() {
           initialRegion={{ latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }}
           customMapStyle={darkMapStyle}
         >
-          {mockPlaces.map((place) => {
-            const coords = PLACE_COORDS[place.id];
-            if (!coords) return null;
-            return (
-              <Marker key={place.id} coordinate={coords} onPress={() => setSelectedPlace(place)}>
-                <View style={styles.mapPin}>
-                  <LinearGradient
-                    colors={[theme.colors.primary, theme.colors.accent]}
-                    style={styles.mapPinInner}
-                  >
-                    <Text style={styles.mapPinEmoji}>📍</Text>
-                  </LinearGradient>
-                </View>
-                <Callout onPress={() => setSelectedPlace(place)} style={styles.callout}>
-                  <Text style={styles.calloutTitle}>{place.name}</Text>
-                  <Text style={styles.calloutSub}>{place.country}</Text>
-                </Callout>
-              </Marker>
-            );
-          })}
+          {featured.filter((p) => p.lat && p.lon).map((place) => (
+            <Marker
+              key={place.id}
+              coordinate={{ latitude: place.lat!, longitude: place.lon! }}
+              onPress={() => handleSelectPlace(place)}
+            >
+              <View style={styles.mapPin}>
+                <LinearGradient
+                  colors={[theme.colors.primary, theme.colors.accent]}
+                  style={styles.mapPinInner}
+                >
+                  <Text style={styles.mapPinEmoji}>📍</Text>
+                </LinearGradient>
+              </View>
+              <Callout onPress={() => handleSelectPlace(place)} style={styles.callout}>
+                <Text style={styles.calloutTitle}>{place.name}</Text>
+                <Text style={styles.calloutSub}>{place.country}</Text>
+              </Callout>
+            </Marker>
+          ))}
         </MapView>
       )}
 
       {/* Grid View */}
       {viewMode === 'grid' && (
         <>
-          {/* Horizontal place cards */}
-      {query.length === 0 && (
-        <View style={styles.featuredSection}>
-          <Text style={styles.sectionLabel}>🔥 Trending Destinations</Text>
-          <FlatList
-            horizontal
-            data={mockPlaces}
-            keyExtractor={(item) => item.id + tick}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalList}
-            renderItem={({ item }) => (
-              <TouchableOpacity onPress={() => setSelectedPlace(item)}>
-                <PlaceCard place={item} onUpdate={forceUpdate} />
-              </TouchableOpacity>
-            )}
-          />
-        </View>
-      )}
-
-      {/* Search results / all places grid */}
-      <Text style={styles.sectionLabel2}>
-        {query ? `Results for "${query}"` : '🌍 All Destinations'}
-      </Text>
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id + tick}
-        numColumns={2}
-        columnWrapperStyle={styles.gridRow}
-        contentContainerStyle={styles.grid}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.gridCard}
-            onPress={() => setSelectedPlace(item)}
-          >
-            <Image source={{ uri: item.coverImage }} style={styles.gridImage} resizeMode="cover" />
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.8)']}
-              style={styles.gridGradient}
-            />
-            <View style={styles.gridInfo}>
-              <Text style={styles.gridName}>{item.name}</Text>
-              <Text style={styles.gridCountry}>{item.country}</Text>
+          {/* Horizontal featured cards */}
+          {query.length === 0 && (
+            <View style={styles.featuredSection}>
+              <Text style={styles.sectionLabel}>🔥 Trending Destinations</Text>
+              {featuredLoading ? (
+                <FlatList
+                  horizontal
+                  data={[1, 2, 3]}
+                  keyExtractor={(i) => String(i)}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={() => <PlaceCardSkeleton />}
+                />
+              ) : (
+                <FlatList
+                  horizontal
+                  data={featured}
+                  keyExtractor={(item) => item.id + tick}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.horizontalList}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity onPress={() => handleSelectPlace(item)}>
+                      <PlaceCard place={item} onUpdate={() => setTick((t) => t + 1)} />
+                    </TouchableOpacity>
+                  )}
+                />
+              )}
             </View>
-            {item.followed && (
-              <View style={styles.followingBadge}>
-                <Text style={styles.followingText}>✓</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🌍</Text>
-            <Text style={styles.emptyText}>No destinations found.</Text>
-          </View>
-        }
-      />
+          )}
+
+          {/* Search results / all places grid */}
+          <Text style={styles.sectionLabel2}>
+            {query ? `Results for "${query}"` : '🌍 All Destinations'}
+          </Text>
+
+          {searchLoading ? (
+            <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 24 }} />
+          ) : (
+            <FlatList
+              data={displayPlaces}
+              keyExtractor={(item) => item.id + tick}
+              numColumns={2}
+              columnWrapperStyle={styles.gridRow}
+              contentContainerStyle={styles.grid}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.gridCard}
+                  onPress={() => handleSelectPlace(item)}
+                >
+                  {item.coverImage ? (
+                    <Image source={{ uri: item.coverImage }} style={styles.gridImage} resizeMode="cover" />
+                  ) : (
+                    <LinearGradient
+                      colors={[theme.colors.primary, theme.colors.accent]}
+                      style={styles.gridImage}
+                    />
+                  )}
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.8)']}
+                    style={styles.gridGradient}
+                  />
+                  <View style={styles.gridInfo}>
+                    <Text style={styles.gridName}>{item.name}</Text>
+                    <Text style={styles.gridCountry}>{item.country}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                featuredLoading && !query ? null : (
+                  <View style={styles.empty}>
+                    <Text style={styles.emptyEmoji}>🌍</Text>
+                    <Text style={styles.emptyText}>No destinations found.</Text>
+                  </View>
+                )
+              }
+            />
+          )}
         </>
       )}
     </SafeAreaView>
@@ -484,5 +587,11 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     ...theme.typography.body,
     lineHeight: 20,
+  },
+  extraPhoto: {
+    width: 180,
+    height: 120,
+    borderRadius: theme.borderRadius.md,
+    marginRight: theme.spacing.sm,
   },
 });

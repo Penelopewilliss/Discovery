@@ -95,6 +95,8 @@ export interface Place {
   travelTips: string[];
   safetyNotes: string[];
   followed: boolean;
+  lat?: number;
+  lon?: number;
 }
 
 export interface Group {
