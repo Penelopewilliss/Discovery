@@ -19,7 +19,13 @@
       "package": "com.travlora.app"
     },
     "plugins": [
-      "expo-video"
+      "expo-video",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Discovery to use your location to show you nearby destinations."
+        }
+      ]
     ]
   }
 }

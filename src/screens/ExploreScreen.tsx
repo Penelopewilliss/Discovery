@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Callout } from 'react-native-maps';
+import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { Place } from '../types';
 import PlaceCard from '../components/PlaceCard';
@@ -56,14 +57,22 @@ export default function ExploreScreen() {
   const [detailTips, setDetailTips] = useState<string[]>([]);
   const [detailPhotos, setDetailPhotos] = useState<string[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // Load featured destinations on mount
+  // Load featured destinations and request GPS on mount
   useEffect(() => {
     getFeaturedPlaces().then((results: FsqPlaceWithPhoto[]) => {
       setFeatured(results.map((r) => fsqToPlace(r, r.photoUrl)));
       setFeaturedLoading(false);
     });
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      }
+    })();
   }, []);
 
   // Debounced search
@@ -225,8 +234,15 @@ export default function ExploreScreen() {
       {/* Map View */}
       {viewMode === 'map' && (
         <MapView
+          provider={PROVIDER_GOOGLE}
           style={styles.map}
-          initialRegion={{ latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }}
+          showsUserLocation={userLocation !== null}
+          showsMyLocationButton
+          initialRegion={
+            userLocation
+              ? { latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 30, longitudeDelta: 40 }
+              : { latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }
+          }
           customMapStyle={darkMapStyle}
         >
           {featured.filter((p) => p.lat && p.lon).map((place) => (
