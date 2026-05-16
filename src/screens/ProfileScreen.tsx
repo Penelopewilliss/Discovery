@@ -14,12 +14,15 @@ import {
   Modal,
   FlatList,
   Share,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+
+const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
 import { mockUser, mockStamps, mockPosts, mockFollowers, mockFollowing } from '../data/mockData';
 import GlassCard from '../components/GlassCard';
@@ -653,7 +656,8 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <MapView
-              style={{ flex: 1 }}
+              style={{ flex: 1, width: SCREEN.width }}
+              provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               initialRegion={{
                 latitude: visitedPlaces[0].lat,
                 longitude: visitedPlaces[0].lon,

@@ -10,10 +10,13 @@ import {
   Image,
   ActivityIndicator,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Callout } from 'react-native-maps';
+import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
+
+const SCREEN = Dimensions.get('window');
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { Place } from '../types';
@@ -264,6 +267,7 @@ export default function ExploreScreen() {
       {viewMode === 'map' && (
         <MapView
           style={styles.map}
+          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
           showsUserLocation={userLocation !== null}
           showsMyLocationButton
           initialRegion={
@@ -425,7 +429,7 @@ const styles = StyleSheet.create({
   },
   toggleBtnActive: { backgroundColor: theme.colors.primary },
   toggleIcon: { fontSize: 14 },
-  map: { flex: 1 },
+  map: { width: SCREEN.width, flex: 1 },
   mapPin: { alignItems: 'center' },
   mapPinInner: {
     width: 36,
