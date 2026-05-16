@@ -9,10 +9,11 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Callout } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { Place } from '../types';
@@ -234,7 +235,6 @@ export default function ExploreScreen() {
       {/* Map View */}
       {viewMode === 'map' && (
         <MapView
-          provider={PROVIDER_GOOGLE}
           style={styles.map}
           showsUserLocation={userLocation !== null}
           showsMyLocationButton
@@ -243,7 +243,7 @@ export default function ExploreScreen() {
               ? { latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 30, longitudeDelta: 40 }
               : { latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }
           }
-          customMapStyle={darkMapStyle}
+          customMapStyle={Platform.OS === 'android' ? darkMapStyle : undefined}
         >
           {featured.filter((p) => p.lat && p.lon).map((place) => (
             <Marker
