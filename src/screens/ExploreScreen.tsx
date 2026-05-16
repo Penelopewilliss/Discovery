@@ -9,14 +9,13 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  Platform,
   Dimensions,
   Modal,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Callout, PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
+import MapView, { Marker, Callout, Polyline } from 'react-native-maps';
 
 const SCREEN = Dimensions.get('window');
 import * as Location from 'expo-location';
@@ -344,7 +343,6 @@ export default function ExploreScreen() {
         <View style={{ flex: 1, width: SCREEN.width }}>
           <MapView
             style={styles.map}
-            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
             showsUserLocation={userLocation !== null}
             showsMyLocationButton
             initialRegion={
@@ -518,7 +516,6 @@ export default function ExploreScreen() {
             <View style={{ height: 200 }}>
               <MapView
                 style={{ flex: 1, width: SCREEN.width }}
-                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                 region={{
                   latitude: tripStops[tripStops.length - 1].lat,
                   longitude: tripStops[tripStops.length - 1].lon,

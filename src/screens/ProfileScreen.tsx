@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 
 const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
@@ -708,7 +708,6 @@ export default function ProfileScreen() {
           ) : (
             <MapView
               style={{ flex: 1, width: SCREEN.width }}
-              provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               initialRegion={{
                 latitude: visitedPlaces[0].lat,
                 longitude: visitedPlaces[0].lon,
@@ -791,7 +790,6 @@ export default function ProfileScreen() {
             <View style={{ height: 300 }}>
               <MapView
                 style={{ flex: 1 }}
-                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                 region={{
                   latitude: selectedTrip.stops[0]?.lat ?? 20,
                   longitude: selectedTrip.stops[0]?.lon ?? 10,
