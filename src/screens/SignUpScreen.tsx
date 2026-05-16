@@ -12,15 +12,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { theme } from '../theme';
+import { AuthStackParamList } from '../navigation/types';
 
-type Props = {
-  onNext: (data: { name: string; username: string; email: string }) => void;
-  onBack: () => void;
-  onLogin: () => void;
-};
-
-export default function SignUpScreen({ onNext, onBack, onLogin }: Props) {
+export default function SignUpScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
+  const onBack = () => navigation.goBack();
+  const onLogin = () => navigation.navigate('Login');
+  const onNext = (data: { name: string; username: string; email: string }) =>
+    navigation.navigate('ProfileSetup', data);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');

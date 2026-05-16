@@ -11,12 +11,14 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { mockGroups, addGroup } from '../data/mockData';
+import { mockGroups, addGroup, toggleJoinGroup } from '../data/mockData';
 import GroupCard from '../components/GroupCard';
+import { Group } from '../types';
 
 const FILTERS = ['All', 'Public', 'Private', 'Joined', 'Mine'];
 
@@ -25,12 +27,23 @@ export default function GroupsScreen() {
   const [query, setQuery] = useState('');
   const [tick, setTick] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [detailJoined, setDetailJoined] = useState(false);
+  const [detailMembers, setDetailMembers] = useState(0);
+  const [detailRequested, setDetailRequested] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newPrivate, setNewPrivate] = useState(false);
   const [newLocationSharing, setNewLocationSharing] = useState(false);
 
   const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
+
+  const openGroup = (group: Group) => {
+    setDetailJoined(group.joined);
+    setDetailMembers(group.memberCount);
+    setDetailRequested(group.requested);
+    setSelectedGroup(group);
+  };
 
   const filtered = mockGroups.filter((g) => {
     const matchesQuery =
@@ -69,6 +82,66 @@ export default function GroupsScreen() {
     setShowCreate(false);
     forceUpdate();
   };
+
+  // ── Group detail view ─────────────────────────────────────────────────────
+  if (selectedGroup) {
+    const group = mockGroups.find((g) => g.id === selectedGroup.id) ?? selectedGroup;
+
+    const handleDetailAction = () => {
+      toggleJoinGroup(group.id);
+      if (group.isPrivate && !detailJoined) {
+        setDetailRequested((prev) => !prev);
+      } else {
+        setDetailMembers((prev) => (detailJoined ? prev - 1 : prev + 1));
+        setDetailJoined((prev) => !prev);
+      }
+      forceUpdate();
+    };
+
+    const actionLabel = detailJoined ? 'Leave Group' : group.isPrivate ? (detailRequested ? 'Requested' : 'Request Access') : 'Join Group';
+
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={{ height: 240 }}>
+            <Image source={{ uri: group.coverImage }} style={StyleSheet.absoluteFillObject as any} resizeMode="cover" />
+            <LinearGradient colors={['transparent', theme.colors.background]} style={StyleSheet.absoluteFillObject as any} />
+            <TouchableOpacity style={styles.detailBack} onPress={() => setSelectedGroup(null)}>
+              <Text style={styles.detailBackText}>← Back</Text>
+            </TouchableOpacity>
+            <View style={styles.detailHeroContent}>
+              <View style={[styles.detailBadge, group.isPrivate ? styles.badgePrivate : styles.badgePublic]}>
+                <Text style={styles.detailBadgeText}>{group.isPrivate ? '🔒 Private' : '🌐 Public'}</Text>
+              </View>
+              <Text style={styles.detailName}>{group.name}</Text>
+              <Text style={styles.detailMemberCount}>👥 {detailMembers.toLocaleString()} members</Text>
+            </View>
+          </View>
+
+          <View style={{ paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md }}>
+            <Text style={styles.detailDesc}>{group.description}</Text>
+
+            {group.locationSharingEnabled && (
+              <View style={styles.detailFeature}>
+                <Text style={styles.detailFeatureText}>📍 Location sharing enabled — members can see each other live</Text>
+              </View>
+            )}
+
+            <TouchableOpacity onPress={handleDetailAction} style={styles.detailActionWrap}>
+              <LinearGradient
+                colors={detailJoined ? ['#333', '#444'] : theme.colors.gradientPrimary as [string, string]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={styles.detailActionBtn}
+              >
+                <Text style={styles.detailActionText}>{actionLabel}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   if (showCreate) {
     return (
@@ -212,7 +285,9 @@ export default function GroupsScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
-          <GroupCard group={item} onUpdate={forceUpdate} />
+          <TouchableOpacity onPress={() => openGroup(item)} activeOpacity={0.85}>
+            <GroupCard group={item} onUpdate={forceUpdate} />
+          </TouchableOpacity>
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -266,7 +341,7 @@ const styles = StyleSheet.create({
   },
   createTitle: {
     color: theme.colors.text,
-    ...theme.typography.title,
+    ...theme.typography.h2,
   },
   createSaveBtn: {
     paddingHorizontal: 16,
@@ -398,4 +473,20 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     ...theme.typography.body,
   },
+  // Group detail styles
+  detailBack: { position: 'absolute', top: 16, left: 16, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.45)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  detailBackText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  detailHeroContent: { position: 'absolute', bottom: 16, left: 16, right: 16 },
+  detailBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: theme.borderRadius.full, alignSelf: 'flex-start', marginBottom: 6 },
+  badgePublic: { backgroundColor: 'rgba(124,92,252,0.4)', borderWidth: 1, borderColor: theme.colors.primary },
+  badgePrivate: { backgroundColor: 'rgba(252,92,125,0.4)', borderWidth: 1, borderColor: theme.colors.accent },
+  detailBadgeText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  detailName: { color: '#fff', fontSize: 24, fontWeight: '800', marginBottom: 4 },
+  detailMemberCount: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+  detailDesc: { color: theme.colors.textSecondary, fontSize: 15, lineHeight: 22, marginBottom: theme.spacing.md },
+  detailFeature: { backgroundColor: 'rgba(124,92,252,0.12)', borderWidth: 1, borderColor: 'rgba(124,92,252,0.3)', borderRadius: theme.borderRadius.md, padding: theme.spacing.md, marginBottom: theme.spacing.md },
+  detailFeatureText: { color: theme.colors.primary, fontSize: 13 },
+  detailActionWrap: { borderRadius: theme.borderRadius.full, overflow: 'hidden', marginTop: theme.spacing.sm },
+  detailActionBtn: { paddingVertical: 14, borderRadius: theme.borderRadius.full, alignItems: 'center' },
+  detailActionText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

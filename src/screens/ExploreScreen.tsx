@@ -11,16 +11,31 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import MapView, { Marker, Callout } from 'react-native-maps';
 import { theme } from '../theme';
 import { mockPlaces } from '../data/mockData';
 import { Place } from '../types';
 import PlaceCard from '../components/PlaceCard';
 import GlassCard from '../components/GlassCard';
+import { PlaceCardSkeleton } from '../components/SkeletonLoader';
+
+// Approximate coordinates for each mock place
+const PLACE_COORDS: Record<string, { latitude: number; longitude: number }> = {
+  place_bali: { latitude: -8.3405, longitude: 115.092 },
+  place_albania: { latitude: 41.1533, longitude: 20.1683 },
+  place_paris: { latitude: 48.8566, longitude: 2.3522 },
+  place_tokyo: { latitude: 35.6762, longitude: 139.6503 },
+  place_lisbon: { latitude: 38.7169, longitude: -9.1399 },
+  place_marrakech: { latitude: 31.6295, longitude: -7.9811 },
+  place_patagonia: { latitude: -51.6230, longitude: -69.2168 },
+  place_kyoto: { latitude: 35.0116, longitude: 135.7681 },
+};
 
 export default function ExploreScreen() {
   const [query, setQuery] = useState('');
   const [tick, setTick] = useState(0);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
 
   const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
 
@@ -84,8 +99,27 @@ export default function ExploreScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Explore</Text>
-        <Text style={styles.subtitle}>Discover & follow destinations</Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.title}>Explore</Text>
+            <Text style={styles.subtitle}>Discover & follow destinations</Text>
+          </View>
+          {/* Grid / Map toggle */}
+          <View style={styles.viewToggle}>
+            <TouchableOpacity
+              onPress={() => setViewMode('grid')}
+              style={[styles.toggleBtn, viewMode === 'grid' && styles.toggleBtnActive]}
+            >
+              <Text style={styles.toggleIcon}>⊞</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setViewMode('map')}
+              style={[styles.toggleBtn, viewMode === 'map' && styles.toggleBtnActive]}
+            >
+              <Text style={styles.toggleIcon}>🗺️</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
       {/* Search */}
@@ -105,7 +139,40 @@ export default function ExploreScreen() {
         )}
       </View>
 
-      {/* Horizontal place cards */}
+      {/* Map View */}
+      {viewMode === 'map' && (
+        <MapView
+          style={styles.map}
+          initialRegion={{ latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }}
+          customMapStyle={darkMapStyle}
+        >
+          {mockPlaces.map((place) => {
+            const coords = PLACE_COORDS[place.id];
+            if (!coords) return null;
+            return (
+              <Marker key={place.id} coordinate={coords} onPress={() => setSelectedPlace(place)}>
+                <View style={styles.mapPin}>
+                  <LinearGradient
+                    colors={[theme.colors.primary, theme.colors.accent]}
+                    style={styles.mapPinInner}
+                  >
+                    <Text style={styles.mapPinEmoji}>📍</Text>
+                  </LinearGradient>
+                </View>
+                <Callout onPress={() => setSelectedPlace(place)} style={styles.callout}>
+                  <Text style={styles.calloutTitle}>{place.name}</Text>
+                  <Text style={styles.calloutSub}>{place.country}</Text>
+                </Callout>
+              </Marker>
+            );
+          })}
+        </MapView>
+      )}
+
+      {/* Grid View */}
+      {viewMode === 'grid' && (
+        <>
+          {/* Horizontal place cards */}
       {query.length === 0 && (
         <View style={styles.featuredSection}>
           <Text style={styles.sectionLabel}>🔥 Trending Destinations</Text>
@@ -158,13 +225,25 @@ export default function ExploreScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
+            <Text style={styles.emptyEmoji}>🌍</Text>
             <Text style={styles.emptyText}>No destinations found.</Text>
           </View>
         }
       />
+        </>
+      )}
     </SafeAreaView>
   );
 }
+
+// Dark style for MapView to match app theme
+const darkMapStyle = [
+  { elementType: 'geometry', stylers: [{ color: '#212121' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#212121' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#000000' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2c2c2c' }] },
+];
 
 const styles = StyleSheet.create({
   container: {
@@ -176,6 +255,46 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.xs,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  toggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: theme.borderRadius.sm,
+  },
+  toggleBtnActive: { backgroundColor: theme.colors.primary },
+  toggleIcon: { fontSize: 14 },
+  map: { flex: 1 },
+  mapPin: { alignItems: 'center' },
+  mapPinInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  mapPinEmoji: { fontSize: 16 },
+  callout: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 8,
+    padding: 8,
+    minWidth: 100,
+  },
+  calloutTitle: { color: theme.colors.text, fontWeight: '700', fontSize: 13 },
+  calloutSub: { color: theme.colors.textMuted, fontSize: 11, marginTop: 2 },
   title: {
     color: theme.colors.text,
     ...theme.typography.hero,
@@ -292,6 +411,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 40,
   },
+  emptyEmoji: { fontSize: 40, marginBottom: 12 },
   emptyText: {
     color: theme.colors.textMuted,
     ...theme.typography.body,

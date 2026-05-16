@@ -18,6 +18,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { Post, PostDelay, Comment, MediaItem } from '../types';
 import { theme } from '../theme';
 import { toggleLike, toggleSave, toggleReaction, getComments, addComment, isFollowing, toggleFollowUser } from '../data/mockData';
@@ -60,6 +61,7 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const [saved, setSaved] = useState(post.saved);
   const [likes, setLikes] = useState(post.likes);
   const [showComments, setShowComments] = useState(false);
+  const [showUserProfile, setShowUserProfile] = useState(false);
   const [comments, setComments] = useState<Comment[]>(() => getComments(post.id));
   const [commentCount, setCommentCount] = useState(post.comments);
   const [commentText, setCommentText] = useState('');
@@ -72,12 +74,14 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
     toggleLike(post.id);
     setLikes((prev) => (liked ? prev - 1 : prev + 1));
     setLiked((prev) => !prev);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onUpdate();
   };
 
   const handleSave = () => {
     toggleSave(post.id);
     setSaved((prev) => !prev);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onUpdate();
   };
 
@@ -111,6 +115,7 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
       if (!liked) {
         handleLike();
       }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setShowHeartAnim(true);
       setTimeout(() => setShowHeartAnim(false), 800);
     }
@@ -123,13 +128,15 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
     <View style={styles.card}>
       {/* Header */}
       <View style={styles.header}>
-        <Image source={{ uri: post.userAvatar }} style={styles.avatar} />
-        <View style={styles.headerInfo}>
-          <Text style={styles.username}>@{post.username}</Text>
-          <Text style={styles.location}>
-            📍 {post.blurLocation ? post.locationArea.split(',')[0].trim() + ' region' : post.locationArea}
-          </Text>
-        </View>
+        <TouchableOpacity style={styles.headerLeft} onPress={() => setShowUserProfile(true)} activeOpacity={0.7}>
+          <Image source={{ uri: post.userAvatar }} style={styles.avatar} />
+          <View style={styles.headerInfo}>
+            <Text style={styles.username}>@{post.username}</Text>
+            <Text style={styles.location}>
+              📍 {post.blurLocation ? post.locationArea.split(',')[0].trim() + ' region' : post.locationArea}
+            </Text>
+          </View>
+        </TouchableOpacity>
         {!isOwnPost && (
           <TouchableOpacity
             onPress={() => {
@@ -338,6 +345,42 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* User Profile Modal */}
+      <Modal visible={showUserProfile} animationType="slide" transparent presentationStyle="overFullScreen">
+        <TouchableWithoutFeedback onPress={() => setShowUserProfile(false)}>
+          <View style={styles.profileModalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.profileModalSheet}>
+                <View style={styles.profileModalHandle} />
+                <Image source={{ uri: post.userAvatar }} style={styles.profileModalAvatar} />
+                <Text style={styles.profileModalUsername}>@{post.username}</Text>
+                {post.destination && (
+                  <Text style={styles.profileModalLocation}>📍 Travels to {post.destination}</Text>
+                )}
+                <View style={styles.profileModalActions}>
+                  {!isOwnPost && (
+                    <TouchableOpacity
+                      style={[styles.profileModalFollowBtn, following && styles.profileModalFollowingBtn]}
+                      onPress={() => {
+                        toggleFollowUser(post.userId);
+                        setFollowing((prev) => !prev);
+                      }}
+                    >
+                      <Text style={[styles.profileModalFollowText, following && styles.profileModalFollowingText]}>
+                        {following ? '✓ Following' : 'Follow'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.profileModalCloseBtn} onPress={() => setShowUserProfile(false)}>
+                    <Text style={styles.profileModalCloseTxt}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 }
@@ -356,6 +399,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  headerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: theme.spacing.sm,
   },
   avatar: {
@@ -741,4 +790,18 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     fontWeight: '700',
   },
+  // User profile modal
+  profileModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  profileModalSheet: { backgroundColor: theme.colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40, alignItems: 'center', paddingTop: 12 },
+  profileModalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: theme.colors.border, marginBottom: 20 },
+  profileModalAvatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: theme.colors.primary, marginBottom: 12 },
+  profileModalUsername: { color: theme.colors.text, fontSize: 18, fontWeight: '700', marginBottom: 4 },
+  profileModalLocation: { color: theme.colors.textMuted, fontSize: 13, marginBottom: 20 },
+  profileModalActions: { flexDirection: 'row', gap: 12, paddingHorizontal: 24 },
+  profileModalFollowBtn: { flex: 1, paddingVertical: 12, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.primary, alignItems: 'center' },
+  profileModalFollowingBtn: { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.colors.border },
+  profileModalFollowText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  profileModalFollowingText: { color: theme.colors.textMuted },
+  profileModalCloseBtn: { flex: 1, paddingVertical: 12, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.glass, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border },
+  profileModalCloseTxt: { color: theme.colors.textSecondary, fontSize: 14, fontWeight: '600' },
 });

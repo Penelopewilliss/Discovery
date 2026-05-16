@@ -9,14 +9,23 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { theme } from '../theme';
 import { Conversation } from '../types';
 import { mockConversations } from '../data/mockData';
-import ChatScreen from './ChatScreen';
+import { RootStackParamList } from '../navigation/types';
 
 export default function MessagesScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
-  const [activeConv, setActiveConv] = useState<Conversation | null>(null);
+
+  const openConv = (conv: Conversation) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === conv.id ? { ...c, unreadCount: 0 } : c))
+    );
+    navigation.navigate('Chat', { conversation: { ...conv, unreadCount: 0 } });
+  };
 
   const formatTime = (iso?: string) => {
     if (!iso) return '';
@@ -26,26 +35,6 @@ export default function MessagesScreen() {
     if (diffH < 24) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
-
-  const openConv = (conv: Conversation) => {
-    // Mark as read
-    setConversations((prev) =>
-      prev.map((c) => (c.id === conv.id ? { ...c, unreadCount: 0 } : c))
-    );
-    setActiveConv({ ...conv, unreadCount: 0 });
-  };
-
-  if (activeConv) {
-    return (
-      <ChatScreen
-        conversation={activeConv}
-        onBack={() => {
-          setActiveConv(null);
-          setConversations([...mockConversations]);
-        }}
-      />
-    );
-  }
 
   const renderItem = ({ item }: { item: Conversation }) => {
     const isDM = item.type === 'dm';

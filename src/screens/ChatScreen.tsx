@@ -13,17 +13,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { theme } from '../theme';
 import { Conversation, ChatMessage } from '../types';
 import { getMessages, sendMessage, toggleLocationSharing } from '../data/mockData';
 import { useUser } from '../context/UserContext';
+import { RootStackParamList } from '../navigation/types';
 
-interface ChatScreenProps {
-  conversation: Conversation;
-  onBack: () => void;
-}
-
-export default function ChatScreen({ conversation, onBack }: ChatScreenProps) {
+export default function ChatScreen() {
+  const navigation = useNavigation();
+  const route = useRoute<RouteProp<RootStackParamList, 'Chat'>>();
+  const conversation = route.params.conversation;
   const { user: loggedInUser } = useUser();
   const [messages, setMessages] = useState<ChatMessage[]>(() => getMessages(conversation.id));
   const [inputText, setInputText] = useState('');
@@ -92,7 +92,7 @@ export default function ChatScreen({ conversation, onBack }: ChatScreenProps) {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <View style={styles.headerCenter}>

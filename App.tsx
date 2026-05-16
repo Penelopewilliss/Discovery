@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { theme } from './src/theme';
 import HomeScreen from './src/screens/HomeScreen';
 import ExploreScreen from './src/screens/ExploreScreen';
@@ -15,16 +17,24 @@ import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import ProfileSetupScreen from './src/screens/ProfileSetupScreen';
 import MessagesScreen from './src/screens/MessagesScreen';
+import ChatScreen from './src/screens/ChatScreen';
+import SearchScreen from './src/screens/SearchScreen';
 import { UserProvider, useUser } from './src/context/UserContext';
+import { AuthStackParamList, RootStackParamList } from './src/navigation/types';
 
-type AuthState = 'welcome' | 'login' | 'signup' | 'setup' | 'app';
+// Configure how notifications appear when app is in foreground
+// (expo-notifications requires a dev build — handler is no-op in Expo Go)
+
+const AuthStack = createNativeStackNavigator<AuthStackParamList>();
+const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 const TABS = [
   { name: 'Home', emoji: '🏠' },
-  { name: 'Explore', emoji: '🔍' },
+  { name: 'Explore', emoji: '🧭' },
   { name: 'Create', emoji: '✈️' },
   { name: 'Groups', emoji: '👥' },
   { name: 'Messages', emoji: '💬' },
+  { name: 'Search', emoji: '🔎' },
   { name: 'Profile', emoji: '👤' },
 ];
 
@@ -33,9 +43,7 @@ function TopBar({ active, onSelect }: { active: string; onSelect: (name: string)
   return (
     <View style={[styles.tabBar, { paddingTop: insets.top }]}>
       <LinearGradient colors={['#0A0A0F', '#12121A']} style={StyleSheet.absoluteFill} />
-      {/* Brand name */}
       <Text style={styles.brandName}>HiddenGems</Text>
-      {/* Tab row */}
       <View style={styles.tabs}>
         {TABS.map((tab) => {
           const focused = active === tab.name;
@@ -59,9 +67,33 @@ function MainScreen({ name }: { name: string }) {
     case 'Create': return <CreatePostScreen />;
     case 'Groups': return <GroupsScreen />;
     case 'Messages': return <MessagesScreen />;
+    case 'Search': return <SearchScreen />;
     case 'Profile': return <ProfileScreen />;
     default: return <HomeScreen />;
   }
+}
+
+function MainApp() {
+  const [activeTab, setActiveTab] = useState('Home');
+  return (
+    <View style={styles.root}>
+      <TopBar active={activeTab} onSelect={setActiveTab} />
+      <View style={styles.screen}>
+        <MainScreen name={activeTab} />
+      </View>
+    </View>
+  );
+}
+
+function AuthNavigator() {
+  return (
+    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
+      <AuthStack.Screen name="Welcome" component={WelcomeScreen} />
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="SignUp" component={SignUpScreen} />
+      <AuthStack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+    </AuthStack.Navigator>
+  );
 }
 
 export default function App() {
@@ -75,114 +107,69 @@ export default function App() {
 }
 
 function AppNavigator() {
-  const { setUser } = useUser();
-  const [authState, setAuthState] = useState<AuthState>('welcome');
-  const [activeTab, setActiveTab] = useState('Home');
-  const [signUpData, setSignUpData] = useState({ name: '', username: '', email: '' });
+  const { user, setUser } = useUser();
+  const [isLoading, setIsLoading] = useState(true);
 
-  const saveAndEnter = async (userData: Parameters<typeof setUser>[0]) => {
-    setUser(userData);
-    try {
-      await AsyncStorage.setItem('@travlora_user', JSON.stringify(userData));
-    } catch (_) {}
-    setAuthState('app');
-  };
-
-  const loginAndEnter = async (email: string) => {
-    try {
-      const stored = await AsyncStorage.getItem('@travlora_user');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Sanitize: if username looks like an email, strip the domain
-        if (parsed.username && parsed.username.includes('@')) {
-          parsed.username = parsed.username.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || 'traveler';
+  useEffect(() => {
+    // Restore session from storage
+    AsyncStorage.getItem('@travlora_user')
+      .then((stored) => {
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.username?.includes('@')) {
+            parsed.username =
+              parsed.username.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || 'traveler';
+          }
+          setUser(parsed);
         }
-        setUser(parsed);
-      } else {
-        // No stored account — create a blank profile so they can set up via Edit Profile
-        setUser({ name: 'Traveler', username: 'traveler', email, avatarUri: null, bio: '', homeCountry: '', interests: [] });
-      }
-    } catch (_) {}
-    setAuthState('app');
-  };
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, []);
 
-  if (authState === 'welcome') {
+  if (isLoading) {
     return (
-      <>
-        <StatusBar style="light" />
-        <WelcomeScreen
-          onGetStarted={() => setAuthState('signup')}
-          onLogin={() => setAuthState('login')}
-        />
-      </>
+      <View style={styles.splash}>
+        <LinearGradient colors={['#07070F', '#12102A', '#1A0A2E']} style={StyleSheet.absoluteFill} />
+        <Text style={styles.splashLogo}>✈️</Text>
+        <Text style={styles.splashBrand}>HiddenGems</Text>
+        <ActivityIndicator color={theme.colors.primary} style={{ marginTop: 24 }} />
+      </View>
     );
   }
 
-  if (authState === 'login') {
-    return (
-      <>
-        <StatusBar style="light" />
-        <LoginScreen
-          onLogin={(email) => loginAndEnter(email)}
-          onBack={() => setAuthState('welcome')}
-          onSignUp={() => setAuthState('signup')}
-        />
-      </>
-    );
-  }
-
-  if (authState === 'signup') {
-    return (
-      <>
-        <StatusBar style="light" />
-        <SignUpScreen
-          onNext={(data) => { setSignUpData(data); setAuthState('setup'); }}
-          onBack={() => setAuthState('welcome')}
-          onLogin={() => setAuthState('login')}
-        />
-      </>
-    );
-  }
-
-  if (authState === 'setup') {
-    return (
-      <>
-        <StatusBar style="light" />
-        <ProfileSetupScreen
-          name={signUpData.name}
-          username={signUpData.username}
-          onComplete={(setupData) => {
-            saveAndEnter({
-              name: signUpData.name,
-              username: signUpData.username,
-              email: signUpData.email,
-              avatarUri: setupData.avatarUri,
-              bio: setupData.bio,
-              homeCountry: setupData.homeCountry,
-              interests: setupData.interests,
-            });
-          }}
-        />
-      </>
-    );
-  }
+  const isLoggedIn = !!user?.email;
 
   return (
-    <>
+    <NavigationContainer>
       <StatusBar style="light" />
-      <View style={styles.root}>
-        <TopBar active={activeTab} onSelect={setActiveTab} />
-        <View style={styles.screen}>
-          <MainScreen name={activeTab} />
-        </View>
-      </View>
-    </>
+      {isLoggedIn ? (
+        <RootStack.Navigator screenOptions={{ headerShown: false }}>
+          <RootStack.Screen name="MainApp" component={MainApp} />
+          <RootStack.Screen
+            name="Chat"
+            component={ChatScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+        </RootStack.Navigator>
+      ) : (
+        <AuthNavigator />
+      )}
+    </NavigationContainer>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.background },
   screen: { flex: 1 },
+  splash: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  splashLogo: { fontSize: 56, marginBottom: 12 },
+  splashBrand: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: theme.colors.text,
+    letterSpacing: 1,
+  },
   tabBar: { backgroundColor: theme.colors.surface, zIndex: 100 },
   brandName: {
     color: theme.colors.textMuted,
@@ -195,9 +182,9 @@ const styles = StyleSheet.create({
   },
   tabs: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 8, paddingHorizontal: 4 },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 4, position: 'relative' },
-  tabEmoji: { fontSize: 20 },
+  tabEmoji: { fontSize: 18 },
   tabEmojiDim: { opacity: 0.45 },
-  tabLabel: { fontSize: 9, color: theme.colors.textMuted, fontWeight: '500', marginTop: 2 },
+  tabLabel: { fontSize: 8, color: theme.colors.textMuted, fontWeight: '500', marginTop: 2 },
   tabLabelActive: { color: theme.colors.primary },
   activeIndicator: {
     position: 'absolute',

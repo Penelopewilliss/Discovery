@@ -14,7 +14,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { theme } from '../theme';
+import { useUser } from '../context/UserContext';
+import { AuthStackParamList } from '../navigation/types';
 
 const INTERESTS = [
   'beach', 'food', 'hidden gem', 'city', 'nature',
@@ -22,17 +26,32 @@ const INTERESTS = [
   'backpacking', 'photography', 'hiking', 'road trips', 'islands',
 ];
 
-type Props = {
-  name: string;
-  username: string;
-  onComplete: (data: { avatarUri: string | null; bio: string; homeCountry: string; interests: string[] }) => void;
-};
+// Suggested users for onboarding
+const SUGGESTED_USERS = [
+  { username: 'nomad.lena', avatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&q=80', bio: 'Solo explorer 🌍' },
+  { username: 'kai.wanderlust', avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&q=80', bio: 'Hidden gem hunter' },
+  { username: 'aurora.travels', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80', bio: '42 countries & counting ✈️' },
+  { username: 'marco.roams', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80', bio: 'Budget travel pro 💰' },
+];
 
-export default function ProfileSetupScreen({ name, username, onComplete }: Props) {
+export default function ProfileSetupScreen() {
+  const navigation = useNavigation();
+  const route = useRoute<RouteProp<AuthStackParamList, 'ProfileSetup'>>();
+  const { name, username, email } = route.params;
+  const { setUser } = useUser();
+
+  const onComplete = async (data: { avatarUri: string | null; bio: string; homeCountry: string; interests: string[] }) => {
+    const userData = { name, username, email, ...data };
+    setUser(userData);
+    try {
+      await AsyncStorage.setItem('@travlora_user', JSON.stringify(userData));
+    } catch (_) {}
+  };
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [bio, setBio] = useState('');
   const [homeCountry, setHomeCountry] = useState('');
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
+  const [followedUsers, setFollowedUsers] = useState<string[]>([]);
 
   const pickAvatar = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -183,6 +202,38 @@ export default function ProfileSetupScreen({ name, username, onComplete }: Props
               </View>
             </View>
 
+            {/* Suggested Users */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Follow Travellers 🌍</Text>
+              <Text style={styles.labelSub}>Some popular explorers to start with</Text>
+              {SUGGESTED_USERS.map((u) => {
+                const followed = followedUsers.includes(u.username);
+                return (
+                  <View key={u.username} style={styles.suggestRow}>
+                    <Image source={{ uri: u.avatar }} style={styles.suggestAvatar} />
+                    <View style={styles.suggestInfo}>
+                      <Text style={styles.suggestName}>@{u.username}</Text>
+                      <Text style={styles.suggestBio}>{u.bio}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() =>
+                        setFollowedUsers((prev) =>
+                          prev.includes(u.username)
+                            ? prev.filter((x) => x !== u.username)
+                            : [...prev, u.username]
+                        )
+                      }
+                      style={[styles.followBtn, followed && styles.followBtnActive]}
+                    >
+                      <Text style={[styles.followBtnText, followed && styles.followBtnTextActive]}>
+                        {followed ? 'Following ✓' : 'Follow'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+
             {/* Complete */}
             <TouchableOpacity onPress={handleComplete} style={styles.primaryBtn}>
               <LinearGradient
@@ -194,7 +245,10 @@ export default function ProfileSetupScreen({ name, username, onComplete }: Props
               </LinearGradient>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={onComplete.bind(null, { avatarUri, bio, homeCountry, interests: selectedInterests })} style={styles.skipBtn}>
+            <TouchableOpacity
+              onPress={() => onComplete({ avatarUri, bio, homeCountry, interests: selectedInterests })}
+              style={styles.skipBtn}
+            >
               <Text style={styles.skipText}>Skip for now</Text>
             </TouchableOpacity>
 
@@ -284,4 +338,25 @@ const styles = StyleSheet.create({
   primaryText: { color: '#fff', fontSize: 17, fontWeight: '700' },
   skipBtn: { alignItems: 'center', paddingVertical: 10 },
   skipText: { color: theme.colors.textMuted, fontSize: 13 },
+  suggestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  suggestAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
+  suggestInfo: { flex: 1 },
+  suggestName: { color: theme.colors.text, fontSize: 14, fontWeight: '600' },
+  suggestBio: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2 },
+  followBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  followBtnActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  followBtnText: { color: theme.colors.primary, fontSize: 13, fontWeight: '600' },
+  followBtnTextActive: { color: '#fff' },
 });

@@ -9,16 +9,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { theme } from '../theme';
+import { AuthStackParamList } from '../navigation/types';
 
 const { width, height } = Dimensions.get('window');
 
-type Props = {
-  onGetStarted: () => void;
-  onLogin: () => void;
-};
-
-export default function WelcomeScreen({ onGetStarted, onLogin }: Props) {
+export default function WelcomeScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
+  const onGetStarted = () => navigation.navigate('SignUp');
+  const onLogin = () => navigation.navigate('Login');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(40)).current;
 

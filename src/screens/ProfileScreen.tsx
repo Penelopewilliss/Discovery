@@ -78,6 +78,9 @@ export default function ProfileScreen() {
   const [hideLocation, setHideLocation] = useState(user.hideExactLocation);
   const [defaultDelay, setDefaultDelay] = useState<PostDelay>(user.defaultDelayedPosting);
   const [showDelayPicker, setShowDelayPicker] = useState(false);
+  const [showFollowersList, setShowFollowersList] = useState(false);
+  const [showFollowingList, setShowFollowingList] = useState(false);
+  const [selectedSavedPost, setSelectedSavedPost] = useState<typeof savedPosts[0] | null>(null);
 
   // Edit profile
   const [showEdit, setShowEdit] = useState(false);
@@ -91,11 +94,11 @@ export default function ProfileScreen() {
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
 
-  const displayName = loggedInUser?.name || user.displayName;
-  const rawUsername = loggedInUser?.username || user.username;
-  const username = rawUsername.includes('@') ? (rawUsername.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || 'traveler') : rawUsername;
-  const bio = loggedInUser?.bio || user.bio;
-  const avatarUri = loggedInUser?.avatarUri || user.avatar;
+  const displayName = loggedInUser?.name || '';
+  const rawUsername = loggedInUser?.username || '';
+  const username = rawUsername.includes('@') ? (rawUsername.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || '') : rawUsername;
+  const bio = loggedInUser?.bio || '';
+  const avatarUri = loggedInUser?.avatarUri || null;
 
   const openEdit = () => {
     setEditName(loggedInUser?.name ?? displayName);
@@ -252,7 +255,7 @@ export default function ProfileScreen() {
                 colors={[theme.colors.primary, theme.colors.accent]}
                 style={[styles.avatar, styles.avatarFallback]}
               >
-                <Text style={styles.avatarInitial}>{displayName[0]?.toUpperCase()}</Text>
+                <Text style={styles.avatarInitial}>{displayName[0]?.toUpperCase() ?? '?'}</Text>
               </LinearGradient>
             )}
             <View style={styles.avatarBorder} />
@@ -261,7 +264,7 @@ export default function ProfileScreen() {
 
         <View style={styles.profileContent}>
           {/* Identity */}
-          <Text style={styles.displayName}>@{username}</Text>
+          <Text style={styles.displayName}>{username ? `@${username}` : 'Set your username'}</Text>
           {!!bio && <Text style={styles.bio}>{bio}</Text>}
 
           {/* Edit Profile button */}
@@ -272,15 +275,15 @@ export default function ProfileScreen() {
           {/* Stats rows */}
           <View style={styles.statsBlock}>
             <View style={styles.statsRow}>
-              <View style={styles.stat}>
+              <TouchableOpacity style={styles.stat} onPress={() => setShowFollowersList(true)}>
                 <Text style={styles.statValue}>{mockFollowers.length}</Text>
                 <Text style={styles.statLabel}>Followers</Text>
-              </View>
+              </TouchableOpacity>
               <View style={styles.statDivider} />
-              <View style={styles.stat}>
+              <TouchableOpacity style={styles.stat} onPress={() => setShowFollowingList(true)}>
                 <Text style={styles.statValue}>{mockFollowing.length}</Text>
                 <Text style={styles.statLabel}>Following</Text>
-              </View>
+              </TouchableOpacity>
             </View>
             <View style={[styles.statsRow, { marginTop: 1 }]}>
               <View style={styles.stat}>
@@ -396,13 +399,16 @@ export default function ProfileScreen() {
             <View style={styles.savedSection}>
               <Text style={styles.sectionTitle}>🔖 Saved Posts</Text>
               {savedPosts.map((post) => (
-                <GlassCard key={post.id} style={styles.savedCard}>
-                  <Image source={{ uri: post.imageUrl }} style={styles.savedImage} resizeMode="cover" />
-                  <View style={styles.savedInfo}>
-                    <Text style={styles.savedDestination}>{post.destination}</Text>
-                    <Text style={styles.savedCaption} numberOfLines={2}>{post.caption}</Text>
-                  </View>
-                </GlassCard>
+                <TouchableOpacity key={post.id} onPress={() => setSelectedSavedPost(post)} activeOpacity={0.8}>
+                  <GlassCard style={styles.savedCard}>
+                    <Image source={{ uri: post.imageUrl }} style={styles.savedImage} resizeMode="cover" />
+                    <View style={styles.savedInfo}>
+                      <Text style={styles.savedDestination}>{post.destination}</Text>
+                      <Text style={styles.savedCaption} numberOfLines={2}>{post.caption}</Text>
+                    </View>
+                    <Text style={{ color: theme.colors.textMuted, fontSize: 18, paddingRight: 4 }}>›</Text>
+                  </GlassCard>
+                </TouchableOpacity>
               ))}
             </View>
           )}
@@ -469,6 +475,85 @@ export default function ProfileScreen() {
 
         <View style={{ height: theme.spacing.xxl }} />
       </ScrollView>
+
+      {/* Followers Modal */}
+      <Modal visible={showFollowersList} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.pickerModal}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>Followers</Text>
+            <TouchableOpacity onPress={() => setShowFollowersList(false)}>
+              <Text style={styles.pickerClose}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={mockFollowers}
+            keyExtractor={(item) => item}
+            renderItem={({ item, index }) => (
+              <View style={styles.userListRow}>
+                <View style={styles.userListAvatar}>
+                  <Text style={{ fontSize: 20 }}>👤</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.userListName}>Traveller {index + 1}</Text>
+                  <Text style={styles.userListHandle}>@traveller_{item.slice(-1)}</Text>
+                </View>
+              </View>
+            )}
+          />
+        </View>
+      </Modal>
+
+      {/* Following Modal */}
+      <Modal visible={showFollowingList} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.pickerModal}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>Following</Text>
+            <TouchableOpacity onPress={() => setShowFollowingList(false)}>
+              <Text style={styles.pickerClose}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={mockFollowing}
+            keyExtractor={(item) => item}
+            renderItem={({ item, index }) => (
+              <View style={styles.userListRow}>
+                <View style={styles.userListAvatar}>
+                  <Text style={{ fontSize: 20 }}>👤</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.userListName}>Traveller {index + 1}</Text>
+                  <Text style={styles.userListHandle}>@traveller_{item.slice(-1)}</Text>
+                </View>
+              </View>
+            )}
+          />
+        </View>
+      </Modal>
+
+      {/* Saved Post Detail Modal */}
+      <Modal visible={!!selectedSavedPost} animationType="slide" presentationStyle="pageSheet">
+        {selectedSavedPost && (
+          <View style={[styles.pickerModal, { backgroundColor: theme.colors.background }]}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>{selectedSavedPost.destination ?? 'Saved Post'}</Text>
+              <TouchableOpacity onPress={() => setSelectedSavedPost(null)}>
+                <Text style={styles.pickerClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              <Image source={{ uri: selectedSavedPost.imageUrl }} style={{ width: '100%', aspectRatio: 1 }} resizeMode="cover" />
+              <View style={{ padding: theme.spacing.md }}>
+                <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 8 }}>@{selectedSavedPost.username} · 📍 {selectedSavedPost.locationArea}</Text>
+                <Text style={{ color: theme.colors.text, fontSize: 15, lineHeight: 22 }}>{selectedSavedPost.caption}</Text>
+                <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
+                  <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>❤️ {selectedSavedPost.likes}</Text>
+                  <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>💬 {selectedSavedPost.comments}</Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        )}
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -662,6 +747,25 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '300',
   },
+  userListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    gap: 12,
+  },
+  userListAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userListName: { color: theme.colors.text, fontSize: 15, fontWeight: '600' },
+  userListHandle: { color: theme.colors.textMuted, fontSize: 13, marginTop: 1 },
   badgeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

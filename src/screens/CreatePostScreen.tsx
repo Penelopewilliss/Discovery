@@ -19,6 +19,7 @@ import { theme } from '../theme';
 import { addPost, mockPlaces } from '../data/mockData';
 import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem } from '../types';
 import GlassCard from '../components/GlassCard';
+import { scheduleLocalNotification, scheduleDelayedPostNotification } from '../utils/notifications';
 
 const TAGS: TravelTag[] = ['beach', 'food', 'hidden gem', 'city', 'nature', 'budget', 'luxury', 'adventure', 'culture', 'solo'];
 const MOODS: TravelMood[] = ['wanderlust', 'relaxed', 'adventurous', 'romantic', 'spiritual', 'thrilled'];
@@ -141,6 +142,17 @@ export default function CreatePostScreen() {
     };
 
     addPost(newPost);
+
+    // Send local notification feedback
+    if (delay === 'now') {
+      scheduleLocalNotification('✈️ Post is live!', `Your memory from ${destination} is now on the feed.`);
+    } else {
+      const delayMap: Record<PostDelay, number> = {
+        now: 0, '6h': 21600, '24h': 86400, '48h': 172800,
+        'after leaving': 43200, 'after trip': 259200,
+      };
+      scheduleDelayedPostNotification(destination, delayMap[delay]);
+    }
 
     Alert.alert(
       '✈️ Post created!',
