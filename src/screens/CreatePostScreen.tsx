@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,15 +11,18 @@ import {
   Image,
   FlatList,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { addPost, mockPlaces } from '../data/mockData';
 import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem } from '../types';
 import GlassCard from '../components/GlassCard';
 import { scheduleLocalNotification, scheduleDelayedPostNotification } from '../utils/notifications';
+import { searchFsqPlaces, FsqPlace } from '../utils/foursquare';
 
 const TAGS: TravelTag[] = ['beach', 'food', 'hidden gem', 'city', 'nature', 'budget', 'luxury', 'adventure', 'culture', 'solo'];
 const MOODS: TravelMood[] = ['wanderlust', 'relaxed', 'adventurous', 'romantic', 'spiritual', 'thrilled'];
@@ -51,6 +54,42 @@ export default function CreatePostScreen() {
   const [hideStay, setHideStay] = useState(true);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [reactionsEnabled, setReactionsEnabled] = useState(true);
+  const [suggestions, setSuggestions] = useState<FsqPlace[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (destination.length < 2) { setSuggestions([]); setShowSuggestions(false); return; }
+    clearTimeout(searchTimer.current);
+    setPlacesLoading(true);
+    searchTimer.current = setTimeout(async () => {
+      const results = await searchFsqPlaces(destination);
+      setSuggestions(results.slice(0, 5));
+      setShowSuggestions(results.length > 0);
+      setPlacesLoading(false);
+    }, 400);
+    return () => clearTimeout(searchTimer.current);
+  }, [destination]);
+
+  const handleGPS = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Allow location access in settings.'); return; }
+    setPlacesLoading(true);
+    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const results = await Location.reverseGeocodeAsync(loc.coords);
+    if (results[0]) {
+      const r = results[0];
+      setDestination([r.city || r.district, r.country].filter(Boolean).join(', '));
+    }
+    setPlacesLoading(false);
+  };
+
+  const pickSuggestion = (place: FsqPlace) => {
+    setDestination(`${place.name}${place.location.country ? ', ' + place.location.country : ''}`);
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
 
   const MAX_MEDIA = 10;
 
@@ -266,16 +305,32 @@ export default function CreatePostScreen() {
 
         {/* Destination */}
         <View style={styles.section}>
-          <Text style={styles.label}>Destination</Text>
-          <View style={styles.inputWrapper}>
+          <Text style={styles.label}>📍 Destination</Text>
+          <View style={styles.destinationRow}>
             <TextInput
-              style={styles.input}
-              placeholder="e.g. Ksamil, Albania"
+              style={styles.destinationInput}
+              placeholder="Search for a place..."
               placeholderTextColor={theme.colors.textMuted}
               value={destination}
-              onChangeText={setDestination}
+              onChangeText={(t) => { setDestination(t); setShowSuggestions(true); }}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
             />
+            <TouchableOpacity style={styles.gpsBtn} onPress={handleGPS}>
+              {placesLoading
+                ? <ActivityIndicator size="small" color={theme.colors.primary} />
+                : <Text style={{ fontSize: 18 }}>📡</Text>}
+            </TouchableOpacity>
           </View>
+          {showSuggestions && suggestions.length > 0 && (
+            <View style={styles.suggestionsBox}>
+              {suggestions.map((place, i) => (
+                <TouchableOpacity key={i} style={styles.suggestionItem} onPress={() => pickSuggestion(place)}>
+                  <Text style={styles.suggestionName}>📍 {place.name}</Text>
+                  <Text style={styles.suggestionSub}>{[place.location.locality, place.location.country].filter(Boolean).join(', ')}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Travel Category */}
@@ -497,6 +552,49 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
+  },
+  destinationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  destinationInput: {
+    flex: 1,
+    color: theme.colors.text,
+    ...theme.typography.body,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 12,
+  },
+  gpsBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  suggestionsBox: {
+    marginTop: 4,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    overflow: 'hidden',
+  },
+  suggestionItem: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  suggestionName: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  suggestionSub: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
   },
   input: {
     color: theme.colors.text,

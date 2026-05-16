@@ -162,10 +162,10 @@ export default function ExploreScreen() {
                   </ScrollView>
                 )}
 
-                {/* Visitor Tips from Foursquare */}
+                {/* About this place */}
                 {detailTips.length > 0 && (
                   <>
-                    <Text style={styles.sectionTitle}>💬 Visitor Tips</Text>
+                    <Text style={styles.sectionTitle}>💬 About this place</Text>
                     {detailTips.map((tip, i) => (
                       <GlassCard key={i} style={styles.tipCard}>
                         <Text style={styles.tipText}>• {tip}</Text>

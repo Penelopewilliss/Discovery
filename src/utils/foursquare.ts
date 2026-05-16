@@ -4,7 +4,7 @@
  * Docs: https://developers.google.com/maps/documentation/places/web-service/op-overview
  */
 
-const KEY: string = (process.env as Record<string, string | undefined>).EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
+const KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 const BASE = 'https://places.googleapis.com/v1';
 
 const FEATURED_DESTINATIONS = [
