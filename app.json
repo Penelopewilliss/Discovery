@@ -16,7 +16,12 @@
       "adaptiveIcon": {
         "backgroundColor": "#0A0A0F"
       },
-      "package": "com.travlora.app"
+      "package": "com.travlora.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBEuS4rfaYqrQ2Tz_WNMQ5CwXX2NECeZnk"
+        }
+      }
     },
     "plugins": [
       "expo-video",

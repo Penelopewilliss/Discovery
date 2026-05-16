@@ -341,9 +341,9 @@ export default function ExploreScreen() {
 
       {/* Map View */}
       {viewMode === 'map' && (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, width: SCREEN.width }}>
           <MapView
-            style={StyleSheet.absoluteFillObject}
+            style={styles.map}
             provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
             showsUserLocation={userLocation !== null}
             showsMyLocationButton
