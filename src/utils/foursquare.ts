@@ -1,14 +1,17 @@
 /**
- * Destinations service — Google Places API (New).
- * Set EXPO_PUBLIC_GOOGLE_PLACES_KEY in your .env file.
- * Docs: https://developers.google.com/maps/documentation/places/web-service/op-overview
+ * Destinations service.
+ * Uses Google Places API (New) when EXPO_PUBLIC_GOOGLE_PLACES_KEY is set.
+ * Falls back to Wikipedia (photos/tips) + OpenStreetMap Nominatim (search) — free, no key needed.
  */
 
 const KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
-const BASE = 'https://places.googleapis.com/v1';
+const GBASE = 'https://places.googleapis.com/v1';
+const WIKI  = 'https://en.wikipedia.org/w/api.php';
+const NOM   = 'https://nominatim.openstreetmap.org/search';
+const UA    = 'DiscoveryApp/1.0';
 
-const FEATURED_DESTINATIONS = [
-  { wiki: 'Paris',          name: 'Paris',          country: 'France',         lat: 48.8566,  lon:  2.3522  },
+export const FEATURED_DESTINATIONS = [
+  { wiki: 'Paris',          name: 'Paris',          country: 'France',         lat: 48.8566,  lon:   2.3522 },
   { wiki: 'Tokyo',          name: 'Tokyo',          country: 'Japan',          lat: 35.6762,  lon: 139.6503 },
   { wiki: 'Rome',           name: 'Rome',           country: 'Italy',          lat: 41.9028,  lon:  12.4964 },
   { wiki: 'Bali',           name: 'Bali',           country: 'Indonesia',      lat: -8.3405,  lon: 115.092  },
@@ -40,6 +43,67 @@ const FEATURED_DESTINATIONS = [
   { wiki: 'Maldives',       name: 'Maldives',       country: 'Maldives',       lat:  3.2028,  lon:  73.2207 },
 ];
 
+// ─── Wikipedia helpers (always free, no key needed) ──────────────────────────
+
+async function wikiThumb(title: string): Promise<string> {
+  try {
+    const params = new URLSearchParams({
+      action: 'query', prop: 'pageimages', pithumbsize: '800',
+      titles: title, format: 'json',
+    });
+    const r = await fetch(`${WIKI}?${params}&origin=*`, { headers: { 'User-Agent': UA } });
+    if (!r.ok) return '';
+    const d = await r.json();
+    const pages = Object.values(d?.query?.pages ?? {}) as any[];
+    return pages[0]?.thumbnail?.source ?? '';
+  } catch { return ''; }
+}
+
+async function wikiExtract(title: string): Promise<string> {
+  try {
+    const params = new URLSearchParams({
+      action: 'query', prop: 'extracts', exintro: '1', exsentences: '8',
+      explaintext: '1', titles: title, format: 'json',
+    });
+    const r = await fetch(`${WIKI}?${params}&origin=*`, { headers: { 'User-Agent': UA } });
+    if (!r.ok) return '';
+    const d = await r.json();
+    const pages = Object.values(d?.query?.pages ?? {}) as any[];
+    return pages[0]?.extract ?? '';
+  } catch { return ''; }
+}
+
+async function wikiImages(title: string): Promise<string[]> {
+  try {
+    const params = new URLSearchParams({
+      action: 'query', prop: 'pageimages', piprop: 'thumbnail', pithumbsize: '800',
+      titles: title, generator: 'images', gimlimit: '20', format: 'json',
+    });
+    const r = await fetch(`${WIKI}?${params}&origin=*`, { headers: { 'User-Agent': UA } });
+    if (!r.ok) return [];
+    const d = await r.json();
+    const pages = Object.values(d?.query?.pages ?? {}) as any[];
+    const urls: string[] = [];
+    for (const page of pages) {
+      const src: string = (page as any)?.thumbnail?.source ?? '';
+      if (src && /\.(jpe?g|png)$/i.test(src)) urls.push(src);
+      if (urls.length >= 5) break;
+    }
+    return urls;
+  } catch { return []; }
+}
+
+function extractToTips(text: string): string[] {
+  if (!text) return [];
+  return text
+    .split(/[.!?]\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 40 && s.length < 400)
+    .slice(0, 6);
+}
+
+// ─── Google Places helpers (used when KEY is available) ──────────────────────
+
 interface GooglePhoto { name: string }
 interface GooglePlace {
   id: string;
@@ -47,31 +111,26 @@ interface GooglePlace {
   formattedAddress?: string;
   location?: { latitude: number; longitude: number };
   photos?: GooglePhoto[];
-  rating?: number;
   userRatingCount?: number;
   editorialSummary?: { text: string };
   reviews?: Array<{ text?: { text: string } }>;
 }
 
-/** Module-level caches — live for the whole app session. */
 const _detailsCache = new Map<string, { googleId: string; photoNames: string[] }>();
-let _featuredCache: FsqPlaceWithPhoto[] | null = null;
 
-function photoUrl(photoName: string): string {
-  return `${BASE}/${photoName}/media?maxWidthPx=800&key=${KEY}`;
+function googlePhotoUrl(photoName: string): string {
+  return `${GBASE}/${photoName}/media?maxWidthPx=800&key=${KEY}`;
 }
 
-const SEARCH_MASK = 'places.id,places.displayName,places.location,places.photos,places.userRatingCount,places.formattedAddress';
-
-async function googleSearchText(query: string, limit = 1): Promise<GooglePlace[]> {
+async function googleSearch(query: string, limit = 1): Promise<GooglePlace[]> {
   if (!KEY) return [];
   try {
-    const r = await fetch(`${BASE}/places:searchText`, {
+    const r = await fetch(`${GBASE}/places:searchText`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': KEY,
-        'X-Goog-FieldMask': SEARCH_MASK,
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.photos,places.userRatingCount,places.formattedAddress',
       },
       body: JSON.stringify({ textQuery: query, languageCode: 'en', maxResultCount: limit }),
     });
@@ -80,6 +139,8 @@ async function googleSearchText(query: string, limit = 1): Promise<GooglePlace[]
     return (d.places as GooglePlace[]) ?? [];
   } catch { return []; }
 }
+
+// ─── Public exports ───────────────────────────────────────────────────────────
 
 export interface FsqPlace {
   fsq_id: string;
@@ -93,25 +154,34 @@ export interface FsqPlaceWithPhoto extends FsqPlace {
   photoUrl: string;
 }
 
-/** Fetches 30 curated world destinations with Google Places photos. Cached per session. */
+let _featuredCache: FsqPlaceWithPhoto[] | null = null;
+
 export async function getFeaturedPlaces(): Promise<FsqPlaceWithPhoto[]> {
   if (_featuredCache) return _featuredCache;
 
   const results = await Promise.all(
     FEATURED_DESTINATIONS.map(async (dest) => {
-      const [place] = await googleSearchText(`${dest.name} ${dest.country}`);
       let photo = '';
-      if (place) {
-        const photoNames = (place.photos ?? []).map((p) => p.name);
-        _detailsCache.set(dest.wiki, { googleId: place.id, photoNames });
-        if (photoNames.length > 0) photo = photoUrl(photoNames[0]);
+      let ratingCount = 50000;
+
+      // Try Google Places first
+      const [gPlace] = await googleSearch(`${dest.name} ${dest.country}`);
+      if (gPlace) {
+        const photoNames = (gPlace.photos ?? []).map((p) => p.name);
+        _detailsCache.set(dest.wiki, { googleId: gPlace.id, photoNames });
+        if (photoNames.length > 0) photo = googlePhotoUrl(photoNames[0]);
+        ratingCount = gPlace.userRatingCount ?? ratingCount;
       }
+
+      // Fall back to Wikipedia thumbnail if no Google photo
+      if (!photo) photo = await wikiThumb(dest.wiki);
+
       return {
         fsq_id: dest.wiki,
         name: dest.name,
         location: { country: dest.country },
         geocodes: { main: { latitude: dest.lat, longitude: dest.lon } },
-        stats: { total_ratings: place?.userRatingCount ?? 50000 },
+        stats: { total_ratings: ratingCount },
         photoUrl: photo,
       } as FsqPlaceWithPhoto;
     })
@@ -121,67 +191,92 @@ export async function getFeaturedPlaces(): Promise<FsqPlaceWithPhoto[]> {
   return _featuredCache;
 }
 
-/** Search for destinations by text query. */
 export async function searchFsqPlaces(query: string): Promise<FsqPlace[]> {
-  const places = await googleSearchText(`${query} travel destination`, 20);
-  return places.map((p) => {
-    const photoNames = (p.photos ?? []).map((ph) => ph.name);
-    _detailsCache.set(p.displayName?.text ?? p.id, { googleId: p.id, photoNames });
-    const parts = (p.formattedAddress ?? '').split(',').map((s) => s.trim());
-    return {
-      fsq_id: p.displayName?.text ?? p.id,
-      name: p.displayName?.text ?? 'Unknown',
-      location: {
-        country: parts[parts.length - 1] ?? '',
-        locality: parts[0] ?? '',
-      },
-      geocodes: p.location
-        ? { main: { latitude: p.location.latitude, longitude: p.location.longitude } }
-        : undefined,
-      stats: { total_ratings: p.userRatingCount ?? 1000 },
-    };
-  });
-}
-
-/** Returns up to 5 Google Places photos for a destination detail view. */
-export async function getPlacePhotos(wiki: string): Promise<string[]> {
-  let cached = _detailsCache.get(wiki);
-  if (!cached) {
-    const [place] = await googleSearchText(wiki);
-    if (!place) return [];
-    const photoNames = (place.photos ?? []).map((p) => p.name);
-    cached = { googleId: place.id, photoNames };
-    _detailsCache.set(wiki, cached);
+  // Try Google Places
+  const gPlaces = await googleSearch(`${query} travel destination`, 20);
+  if (gPlaces.length > 0) {
+    return gPlaces.map((p) => {
+      const photoNames = (p.photos ?? []).map((ph) => ph.name);
+      _detailsCache.set(p.displayName?.text ?? p.id, { googleId: p.id, photoNames });
+      const parts = (p.formattedAddress ?? '').split(',').map((s) => s.trim());
+      return {
+        fsq_id: p.displayName?.text ?? p.id,
+        name: p.displayName?.text ?? 'Unknown',
+        location: { country: parts[parts.length - 1] ?? '', locality: parts[0] ?? '' },
+        geocodes: p.location
+          ? { main: { latitude: p.location.latitude, longitude: p.location.longitude } }
+          : undefined,
+        stats: { total_ratings: p.userRatingCount ?? 1000 },
+      };
+    });
   }
-  return cached.photoNames.slice(0, 5).map(photoUrl);
-}
 
-/** Returns editorial summary + user reviews as tips for a destination. */
-export async function getPlaceTips(wiki: string): Promise<string[]> {
-  let cached = _detailsCache.get(wiki);
-  if (!cached) {
-    const [place] = await googleSearchText(wiki);
-    if (!place) return [];
-    cached = { googleId: place.id, photoNames: (place.photos ?? []).map((p) => p.name) };
-    _detailsCache.set(wiki, cached);
-  }
-  if (!KEY) return [];
+  // Fall back to Nominatim (OpenStreetMap) — always free
   try {
-    const r = await fetch(`${BASE}/places/${cached.googleId}`, {
-      headers: {
-        'X-Goog-Api-Key': KEY,
-        'X-Goog-FieldMask': 'editorialSummary,reviews',
-      },
+    const params = new URLSearchParams({ q: query, format: 'json', limit: '20', addressdetails: '1' });
+    const r = await fetch(`${NOM}?${params}`, {
+      headers: { 'User-Agent': UA, 'Accept-Language': 'en' },
     });
     if (!r.ok) return [];
-    const d: GooglePlace = await r.json();
-    const tips: string[] = [];
-    if (d.editorialSummary?.text) tips.push(d.editorialSummary.text);
-    for (const rev of d.reviews ?? []) {
-      const t = rev.text?.text ?? '';
-      if (t.length > 30) tips.push(t);
-      if (tips.length >= 6) break;
-    }
-    return tips;
+    const data: any[] = await r.json();
+    return data.map((item: any) => {
+      const parts = (item.display_name as string).split(',').map((s: string) => s.trim());
+      return {
+        fsq_id: String(item.place_id),
+        name: item.name || parts[0],
+        location: { country: item.address?.country ?? parts[parts.length - 1] ?? '', locality: parts[0] },
+        geocodes: { main: { latitude: parseFloat(item.lat), longitude: parseFloat(item.lon) } },
+        stats: { total_ratings: 10000 },
+      };
+    });
   } catch { return []; }
+}
+
+export async function getPlacePhotos(wiki: string): Promise<string[]> {
+  // Check Google cache first
+  const cached = _detailsCache.get(wiki);
+  if (cached?.photoNames.length) return cached.photoNames.slice(0, 5).map(googlePhotoUrl);
+
+  // Try Google search
+  if (KEY) {
+    const [place] = await googleSearch(wiki);
+    if (place) {
+      const photoNames = (place.photos ?? []).map((p) => p.name);
+      _detailsCache.set(wiki, { googleId: place.id, photoNames });
+      if (photoNames.length) return photoNames.slice(0, 5).map(googlePhotoUrl);
+    }
+  }
+
+  // Fall back to Wikipedia image gallery
+  return wikiImages(wiki);
+}
+
+export async function getPlaceTips(wiki: string): Promise<string[]> {
+  // Try Google Places reviews/editorial
+  const cached = _detailsCache.get(wiki);
+  if (cached?.googleId && KEY) {
+    try {
+      const r = await fetch(`${GBASE}/places/${cached.googleId}`, {
+        headers: {
+          'X-Goog-Api-Key': KEY,
+          'X-Goog-FieldMask': 'editorialSummary,reviews',
+        },
+      });
+      if (r.ok) {
+        const d: GooglePlace = await r.json();
+        const tips: string[] = [];
+        if (d.editorialSummary?.text) tips.push(d.editorialSummary.text);
+        for (const rev of d.reviews ?? []) {
+          const t = rev.text?.text ?? '';
+          if (t.length > 30) tips.push(t);
+          if (tips.length >= 6) break;
+        }
+        if (tips.length) return tips;
+      }
+    } catch { /* fall through to Wikipedia */ }
+  }
+
+  // Fall back to Wikipedia extract
+  const extract = await wikiExtract(wiki);
+  return extractToTips(extract);
 }

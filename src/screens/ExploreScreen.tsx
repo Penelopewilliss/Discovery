@@ -17,6 +17,7 @@ import MapView, { Marker, Callout } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { Place } from '../types';
+import { useUser, VisitedPlace } from '../context/UserContext';
 import PlaceCard from '../components/PlaceCard';
 import GlassCard from '../components/GlassCard';
 import { PlaceCardSkeleton } from '../components/SkeletonLoader';
@@ -46,6 +47,7 @@ function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
 }
 
 export default function ExploreScreen() {
+  const { isVisited, markVisited, removeVisited } = useUser();
   const [query, setQuery] = useState('');
   const [tick, setTick] = useState(0);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -136,6 +138,32 @@ export default function ExploreScreen() {
               <Text style={styles.heroFollowers}>
                 👥 {selectedPlace.followersCount.toLocaleString()} check-ins
               </Text>
+              <TouchableOpacity
+                style={[
+                  styles.visitedBtn,
+                  isVisited(selectedPlace.id) && styles.visitedBtnActive,
+                ]}
+                onPress={() => {
+                  if (isVisited(selectedPlace.id)) {
+                    removeVisited(selectedPlace.id);
+                  } else {
+                    const vp: VisitedPlace = {
+                      id: selectedPlace.id,
+                      name: selectedPlace.name,
+                      country: selectedPlace.country,
+                      lat: selectedPlace.lat ?? 0,
+                      lon: selectedPlace.lon ?? 0,
+                      coverImage: selectedPlace.coverImage,
+                      visitedAt: new Date().toISOString(),
+                    };
+                    markVisited(vp);
+                  }
+                }}
+              >
+                <Text style={styles.visitedBtnText}>
+                  {isVisited(selectedPlace.id) ? '✅ Visited! Tap to remove' : '📍 I\'ve been here!'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -245,26 +273,29 @@ export default function ExploreScreen() {
           }
           customMapStyle={Platform.OS === 'android' ? darkMapStyle : undefined}
         >
-          {featured.filter((p) => p.lat && p.lon).map((place) => (
-            <Marker
-              key={place.id}
-              coordinate={{ latitude: place.lat!, longitude: place.lon! }}
-              onPress={() => handleSelectPlace(place)}
-            >
-              <View style={styles.mapPin}>
-                <LinearGradient
-                  colors={[theme.colors.primary, theme.colors.accent]}
-                  style={styles.mapPinInner}
-                >
-                  <Text style={styles.mapPinEmoji}>📍</Text>
-                </LinearGradient>
-              </View>
-              <Callout onPress={() => handleSelectPlace(place)} style={styles.callout}>
-                <Text style={styles.calloutTitle}>{place.name}</Text>
-                <Text style={styles.calloutSub}>{place.country}</Text>
-              </Callout>
-            </Marker>
-          ))}
+          {featured.filter((p) => p.lat && p.lon).map((place) => {
+            const visited = isVisited(place.id);
+            return (
+              <Marker
+                key={place.id}
+                coordinate={{ latitude: place.lat!, longitude: place.lon! }}
+                onPress={() => handleSelectPlace(place)}
+              >
+                <View style={styles.mapPin}>
+                  <LinearGradient
+                    colors={visited ? ['#22c55e', '#16a34a'] : [theme.colors.primary, theme.colors.accent]}
+                    style={styles.mapPinInner}
+                  >
+                    <Text style={styles.mapPinEmoji}>{visited ? '✅' : '📍'}</Text>
+                  </LinearGradient>
+                </View>
+                <Callout onPress={() => handleSelectPlace(place)} style={styles.callout}>
+                  <Text style={styles.calloutTitle}>{place.name}</Text>
+                  <Text style={styles.calloutSub}>{place.country}{visited ? ' · Visited ✅' : ''}</Text>
+                </Callout>
+              </Marker>
+            );
+          })}
         </MapView>
       )}
 
@@ -584,6 +615,25 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     ...theme.typography.caption,
     marginTop: 4,
+  },
+  visitedBtn: {
+    marginTop: theme.spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+  },
+  visitedBtnActive: {
+    backgroundColor: 'rgba(34,197,94,0.25)',
+    borderColor: '#22c55e',
+  },
+  visitedBtnText: {
+    color: theme.colors.text,
+    ...theme.typography.caption,
+    fontWeight: '700',
   },
   detailContent: {
     padding: theme.spacing.md,

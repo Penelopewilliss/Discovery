@@ -13,11 +13,13 @@ import {
   Alert,
   Modal,
   FlatList,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { theme } from '../theme';
 import { mockUser, mockStamps, mockPosts, mockFollowers, mockFollowing } from '../data/mockData';
 import GlassCard from '../components/GlassCard';
@@ -72,7 +74,7 @@ const BADGE_COLORS = [
 ];
 
 export default function ProfileScreen() {
-  const { user: loggedInUser, setUser } = useUser();
+  const { user: loggedInUser, setUser, visitedPlaces } = useUser();
   const user = mockUser;
   const [privateProfile, setPrivateProfile] = useState(user.privateProfile);
   const [hideLocation, setHideLocation] = useState(user.hideExactLocation);
@@ -81,6 +83,7 @@ export default function ProfileScreen() {
   const [showFollowersList, setShowFollowersList] = useState(false);
   const [showFollowingList, setShowFollowingList] = useState(false);
   const [selectedSavedPost, setSelectedSavedPost] = useState<typeof savedPosts[0] | null>(null);
+  const [showTravelMap, setShowTravelMap] = useState(false);
 
   // Edit profile
   const [showEdit, setShowEdit] = useState(false);
@@ -348,6 +351,71 @@ export default function ProfileScreen() {
             </View>
           </GlassCard>
 
+          {/* My Travel Map */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>🗺️ My Travel Map</Text>
+            {visitedPlaces.length > 0 && (
+              <TouchableOpacity
+                onPress={async () => {
+                  const names = visitedPlaces.map((p) => `${p.name}, ${p.country}`).join(' → ');
+                  await Share.share({
+                    message: `My travel journey on Discovery:\n${names}\n\nDownload Discovery to build yours! 🌍`,
+                    title: 'My Discovery Travel Map',
+                  });
+                }}
+                style={styles.addCountryBtn}
+              >
+                <Text style={styles.addCountryBtnText}>Share 🔗</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity onPress={() => setShowTravelMap(true)} activeOpacity={0.85}>
+            <GlassCard style={styles.travelMapPreview}>
+              {visitedPlaces.length === 0 ? (
+                <View style={styles.travelMapEmpty}>
+                  <Text style={styles.travelMapEmptyEmoji}>🌍</Text>
+                  <Text style={styles.travelMapEmptyTitle}>No places visited yet</Text>
+                  <Text style={styles.travelMapEmptySub}>
+                    Explore destinations and tap "I've been here!" to start your travel map.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.travelMapStatsRow}>
+                    <View style={styles.travelMapStat}>
+                      <Text style={styles.travelMapStatNum}>{visitedPlaces.length}</Text>
+                      <Text style={styles.travelMapStatLabel}>Places</Text>
+                    </View>
+                    <View style={styles.travelMapStat}>
+                      <Text style={styles.travelMapStatNum}>
+                        {new Set(visitedPlaces.map((p) => p.country)).size}
+                      </Text>
+                      <Text style={styles.travelMapStatLabel}>Countries</Text>
+                    </View>
+                    <View style={styles.travelMapStat}>
+                      <Text style={styles.travelMapStatNum}>
+                        {new Set(visitedPlaces.map((p) => p.visitedAt.slice(0, 4))).size}
+                      </Text>
+                      <Text style={styles.travelMapStatLabel}>Years</Text>
+                    </View>
+                  </View>
+                  <View style={styles.travelMapMiniRoute}>
+                    {visitedPlaces.slice(0, 5).map((p, i) => (
+                      <View key={p.id} style={styles.travelMapMiniStop}>
+                        {i > 0 && <Text style={styles.travelMapArrow}>→</Text>}
+                        <Text style={styles.travelMapMiniStopText} numberOfLines={1}>{p.name}</Text>
+                      </View>
+                    ))}
+                    {visitedPlaces.length > 5 && (
+                      <Text style={styles.travelMapMore}>+{visitedPlaces.length - 5} more</Text>
+                    )}
+                  </View>
+                  <Text style={styles.travelMapTap}>Tap to open full map →</Text>
+                </>
+              )}
+            </GlassCard>
+          </TouchableOpacity>
+
           {/* Country Picker Modal */}
           <Modal visible={showCountryPicker} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.pickerModal}>
@@ -553,6 +621,94 @@ export default function ProfileScreen() {
             </ScrollView>
           </View>
         )}
+      </Modal>
+
+      {/* My Travel Map Modal */}
+      <Modal visible={showTravelMap} animationType="slide" presentationStyle="fullScreen">
+        <View style={styles.travelMapModal}>
+          {/* Header */}
+          <View style={styles.travelMapHeader}>
+            <View>
+              <Text style={styles.travelMapTitle}>🗺️ My Travel Map</Text>
+              <Text style={styles.travelMapSubtitle}>
+                {visitedPlaces.length} places · {new Set(visitedPlaces.map((p) => p.country)).size} countries
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowTravelMap(false)}
+              style={styles.travelMapCloseBtn}
+            >
+              <Text style={styles.travelMapClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Map */}
+          {visitedPlaces.length === 0 ? (
+            <View style={styles.travelMapEmptyFull}>
+              <Text style={{ fontSize: 64 }}>🌍</Text>
+              <Text style={styles.travelMapEmptyTitle}>No places yet</Text>
+              <Text style={styles.travelMapEmptySub}>
+                Go to Explore, open a destination and tap{'\n'}"📍 I've been here!" to add it here.
+              </Text>
+            </View>
+          ) : (
+            <MapView
+              style={{ flex: 1 }}
+              initialRegion={{
+                latitude: visitedPlaces[0].lat,
+                longitude: visitedPlaces[0].lon,
+                latitudeDelta: 60,
+                longitudeDelta: 80,
+              }}
+              showsUserLocation={false}
+            >
+              {visitedPlaces.map((place, i) => (
+                <Marker
+                  key={place.id}
+                  coordinate={{ latitude: place.lat, longitude: place.lon }}
+                  title={place.name}
+                  description={`${place.country} · Stop #${i + 1}`}
+                  pinColor="#22c55e"
+                />
+              ))}
+              {visitedPlaces.length > 1 && (
+                <Polyline
+                  coordinates={visitedPlaces.map((p) => ({ latitude: p.lat, longitude: p.lon }))}
+                  strokeColor={theme.colors.primary}
+                  strokeWidth={2.5}
+                  lineDashPattern={[8, 4]}
+                />
+              )}
+            </MapView>
+          )}
+
+          {/* Bottom strip — journey list */}
+          {visitedPlaces.length > 0 && (
+            <View style={styles.travelMapBottomStrip}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: theme.spacing.sm }}>
+                {visitedPlaces.map((place, i) => (
+                  <View key={place.id} style={styles.travelMapStopChip}>
+                    <Text style={styles.travelMapStopNum}>{i + 1}</Text>
+                    <Text style={styles.travelMapStopName} numberOfLines={1}>{place.name}</Text>
+                    <Text style={styles.travelMapStopCountry} numberOfLines={1}>{place.country}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+              <TouchableOpacity
+                style={styles.travelMapShareBtn}
+                onPress={async () => {
+                  const names = visitedPlaces.map((p, i) => `${i + 1}. ${p.name}, ${p.country}`).join('\n');
+                  await Share.share({
+                    message: `🗺️ My travel journey on Discovery:\n\n${names}\n\nDiscover yours at discoveryapp.com 🌍`,
+                    title: 'My Discovery Travel Map',
+                  });
+                }}
+              >
+                <Text style={styles.travelMapShareBtnText}>📤 Share My Journey</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1032,5 +1188,160 @@ const styles = StyleSheet.create({
     ...theme.typography.tiny,
     textAlign: 'right',
     marginTop: 4,
+  },
+  // Travel Map
+  travelMapPreview: {
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  },
+  travelMapEmpty: {
+    alignItems: 'center',
+    paddingVertical: theme.spacing.md,
+  },
+  travelMapEmptyEmoji: { fontSize: 40, marginBottom: theme.spacing.sm },
+  travelMapEmptyTitle: {
+    color: theme.colors.text,
+    ...theme.typography.h3,
+    marginBottom: 4,
+  },
+  travelMapEmptySub: {
+    color: theme.colors.textMuted,
+    ...theme.typography.caption,
+    textAlign: 'center',
+  },
+  travelMapStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: theme.spacing.md,
+  },
+  travelMapStat: { alignItems: 'center' },
+  travelMapStatNum: {
+    color: theme.colors.primary,
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  travelMapStatLabel: {
+    color: theme.colors.textMuted,
+    ...theme.typography.tiny,
+    marginTop: 2,
+  },
+  travelMapMiniRoute: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: theme.spacing.sm,
+  },
+  travelMapMiniStop: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  travelMapArrow: { color: theme.colors.textMuted, fontSize: 12 },
+  travelMapMiniStopText: {
+    color: theme.colors.textSecondary,
+    ...theme.typography.caption,
+    fontWeight: '600',
+    maxWidth: 80,
+  },
+  travelMapMore: {
+    color: theme.colors.primary,
+    ...theme.typography.caption,
+    fontWeight: '700',
+  },
+  travelMapTap: {
+    color: theme.colors.primary,
+    ...theme.typography.caption,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  // Full Travel Map Modal
+  travelMapModal: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  travelMapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: theme.spacing.md,
+    paddingTop: 56,
+    backgroundColor: theme.colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  travelMapTitle: {
+    color: theme.colors.text,
+    ...theme.typography.h2,
+    fontWeight: '800',
+  },
+  travelMapSubtitle: {
+    color: theme.colors.textMuted,
+    ...theme.typography.caption,
+    marginTop: 2,
+  },
+  travelMapCloseBtn: {
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.full,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+  },
+  travelMapClose: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  travelMapEmptyFull: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.xl,
+  },
+  travelMapBottomStrip: {
+    backgroundColor: theme.colors.background,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingBottom: 24,
+  },
+  travelMapStopChip: {
+    backgroundColor: theme.colors.glass,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+    padding: theme.spacing.sm,
+    marginRight: theme.spacing.sm,
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  travelMapStopNum: {
+    color: theme.colors.primary,
+    fontWeight: '800',
+    fontSize: 18,
+  },
+  travelMapStopName: {
+    color: theme.colors.text,
+    ...theme.typography.caption,
+    fontWeight: '700',
+    maxWidth: 90,
+    textAlign: 'center',
+  },
+  travelMapStopCountry: {
+    color: theme.colors.textMuted,
+    ...theme.typography.tiny,
+    maxWidth: 90,
+    textAlign: 'center',
+  },
+  travelMapShareBtn: {
+    margin: theme.spacing.md,
+    marginTop: theme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.full,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  travelMapShareBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });
