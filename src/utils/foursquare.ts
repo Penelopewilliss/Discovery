@@ -122,7 +122,7 @@ function googlePhotoUrl(photoName: string): string {
   return `${GBASE}/${photoName}/media?maxWidthPx=800&key=${KEY}`;
 }
 
-async function googleSearch(query: string, limit = 1): Promise<GooglePlace[]> {
+async function googleSearch(query: string, limit = 1, signal?: AbortSignal): Promise<GooglePlace[]> {
   if (!KEY) return [];
   try {
     const r = await fetch(`${GBASE}/places:searchText`, {
@@ -133,6 +133,7 @@ async function googleSearch(query: string, limit = 1): Promise<GooglePlace[]> {
         'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.photos,places.userRatingCount,places.formattedAddress',
       },
       body: JSON.stringify({ textQuery: query, languageCode: 'en', maxResultCount: limit }),
+      signal,
     });
     if (!r.ok) return [];
     const d = await r.json();
@@ -191,9 +192,9 @@ export async function getFeaturedPlaces(): Promise<FsqPlaceWithPhoto[]> {
   return _featuredCache;
 }
 
-export async function searchFsqPlaces(query: string): Promise<FsqPlace[]> {
+export async function searchFsqPlaces(query: string, signal?: AbortSignal): Promise<FsqPlace[]> {
   // Try Google Places
-  const gPlaces = await googleSearch(`${query} travel destination`, 20);
+  const gPlaces = await googleSearch(`${query} travel destination`, 20, signal);
   if (gPlaces.length > 0) {
     return gPlaces.map((p) => {
       const photoNames = (p.photos ?? []).map((ph) => ph.name);
@@ -212,24 +213,62 @@ export async function searchFsqPlaces(query: string): Promise<FsqPlace[]> {
   }
 
   // Fall back to Nominatim (OpenStreetMap) — always free
+  // Classes that represent real travel destinations
+  const GOOD_CLASSES = new Set([
+    'place', 'boundary', 'aeroway', 'tourism', 'natural',
+    'historic', 'amenity', 'leisure', 'landuse',
+  ]);
+  // Types that are noise (streets, paths, individual buildings)
+  const SKIP_TYPES = new Set([
+    'path', 'track', 'service', 'residential', 'motorway', 'primary',
+    'secondary', 'tertiary', 'trunk', 'unclassified', 'footway', 'cycleway',
+    'house', 'building', 'yes', 'pedestrian', 'living_street',
+  ]);
+
   try {
-    const params = new URLSearchParams({ q: query, format: 'json', limit: '20', addressdetails: '1' });
+    const params = new URLSearchParams({
+      q: query,
+      format: 'json',
+      limit: '30',
+      addressdetails: '1',
+      namedetails: '1',
+      extratags: '1',
+    });
     const r = await fetch(`${NOM}?${params}`, {
       headers: { 'User-Agent': UA, 'Accept-Language': 'en' },
+      signal,
     });
     if (!r.ok) return [];
     const data: any[] = await r.json();
-    return data.map((item: any) => {
-      const parts = (item.display_name as string).split(',').map((s: string) => s.trim());
-      return {
-        fsq_id: String(item.place_id),
-        name: item.name || parts[0],
-        location: { country: item.address?.country ?? parts[parts.length - 1] ?? '', locality: parts[0] },
-        geocodes: { main: { latitude: parseFloat(item.lat), longitude: parseFloat(item.lon) } },
-        stats: { total_ratings: 10000 },
-      };
-    });
-  } catch { return []; }
+
+    return data
+      .filter((item: any) => {
+        // Skip very low importance results (noise)
+        if (typeof item.importance === 'number' && item.importance < 0.15) return false;
+        // Skip non-travel types
+        if (SKIP_TYPES.has(item.type)) return false;
+        // Must have a real name
+        if (!item.name && !item.namedetails?.name) return false;
+        return true;
+      })
+      .sort((a: any, b: any) => (b.importance ?? 0) - (a.importance ?? 0))
+      .slice(0, 12)
+      .map((item: any) => {
+        const displayParts = (item.display_name as string).split(',').map((s: string) => s.trim());
+        const name = item.namedetails?.name || item.name || displayParts[0];
+        const country = item.address?.country ?? displayParts[displayParts.length - 1] ?? '';
+        return {
+          fsq_id: String(item.place_id),
+          name,
+          location: { country, locality: item.address?.city || item.address?.town || item.address?.village || displayParts[0] },
+          geocodes: { main: { latitude: parseFloat(item.lat), longitude: parseFloat(item.lon) } },
+          stats: { total_ratings: Math.round((item.importance ?? 0.1) * 100000) },
+        };
+      });
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return [];
+    return [];
+  }
 }
 
 export async function getPlacePhotos(wiki: string): Promise<string[]> {

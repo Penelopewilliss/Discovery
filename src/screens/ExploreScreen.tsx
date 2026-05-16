@@ -66,6 +66,7 @@ export default function ExploreScreen() {
   const [tripResults, setTripResults] = useState<FsqPlace[]>([]);
   const [tripSearchLoading, setTripSearchLoading] = useState(false);
   const tripSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const tripAbortRef = useRef<AbortController>();
 
   const [featured, setFeatured] = useState<Place[]>([]);
   const [searchResults, setSearchResults] = useState<Place[]>([]);
@@ -76,6 +77,7 @@ export default function ExploreScreen() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const searchAbortRef = useRef<AbortController>();
 
   // Load featured destinations and request GPS on mount
   useEffect(() => {
@@ -100,12 +102,25 @@ export default function ExploreScreen() {
     }
     clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(async () => {
+      // Cancel any in-flight request
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = new AbortController();
+      const { signal } = searchAbortRef.current;
       setSearchLoading(true);
-      const results = await searchFsqPlaces(query);
-      setSearchResults(results.map((r) => fsqToPlace(r, '')));
-      setSearchLoading(false);
+      try {
+        const results = await searchFsqPlaces(query, signal);
+        if (!signal.aborted) {
+          setSearchResults(results.map((r) => fsqToPlace(r, '')));
+          setSearchLoading(false);
+        }
+      } catch {
+        if (!searchAbortRef.current?.signal.aborted) setSearchLoading(false);
+      }
     }, 500);
-    return () => clearTimeout(searchTimer.current);
+    return () => {
+      clearTimeout(searchTimer.current);
+      searchAbortRef.current?.abort();
+    };
   }, [query]);
 
   // Trip destination search
@@ -113,12 +128,25 @@ export default function ExploreScreen() {
     if (!tripSearch.trim()) { setTripResults([]); return; }
     clearTimeout(tripSearchTimer.current);
     tripSearchTimer.current = setTimeout(async () => {
+      // Cancel any in-flight request
+      tripAbortRef.current?.abort();
+      tripAbortRef.current = new AbortController();
+      const { signal } = tripAbortRef.current;
       setTripSearchLoading(true);
-      const results = await searchFsqPlaces(tripSearch);
-      setTripResults(results.filter((r) => r.geocodes?.main));
-      setTripSearchLoading(false);
+      try {
+        const results = await searchFsqPlaces(tripSearch, signal);
+        if (!signal.aborted) {
+          setTripResults(results.filter((r) => r.geocodes?.main));
+          setTripSearchLoading(false);
+        }
+      } catch {
+        if (!tripAbortRef.current?.signal.aborted) setTripSearchLoading(false);
+      }
     }, 400);
-    return () => clearTimeout(tripSearchTimer.current);
+    return () => {
+      clearTimeout(tripSearchTimer.current);
+      tripAbortRef.current?.abort();
+    };
   }, [tripSearch]);
 
   const addStop = (place: FsqPlace) => {
