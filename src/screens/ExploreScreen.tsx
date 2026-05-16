@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Callout, Polyline } from 'react-native-maps';
+import MapView, { Marker, Callout, Polyline, UrlTile } from 'react-native-maps';
 
 const SCREEN = Dimensions.get('window');
 import * as Location from 'expo-location';
@@ -348,6 +348,7 @@ export default function ExploreScreen() {
           {mapContainerHeight > 0 && (
           <MapView
             style={{ width: SCREEN.width, height: mapContainerHeight }}
+            mapType="none"
             showsUserLocation={userLocation !== null}
             showsMyLocationButton
             initialRegion={
@@ -356,6 +357,11 @@ export default function ExploreScreen() {
                 : { latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }
             }
           >
+            <UrlTile
+              urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maximumZ={19}
+              flipY={false}
+            />
             {/* Featured destination pins */}
             {featured.filter((p) => p.lat && p.lon).map((place) => {
               const visited = isVisited(place.id);
@@ -522,6 +528,7 @@ export default function ExploreScreen() {
             <View style={{ height: 200 }}>
               <MapView
                 style={{ flex: 1, width: SCREEN.width }}
+                mapType="none"
                 region={{
                   latitude: tripStops[tripStops.length - 1].lat,
                   longitude: tripStops[tripStops.length - 1].lon,
@@ -529,6 +536,11 @@ export default function ExploreScreen() {
                   longitudeDelta: 60,
                 }}
               >
+                <UrlTile
+                  urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  maximumZ={19}
+                  flipY={false}
+                />
                 {tripStops.map((stop, i) => (
                   <Marker
                     key={i}

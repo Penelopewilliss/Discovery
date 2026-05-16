@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
 
 const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
@@ -708,6 +708,7 @@ export default function ProfileScreen() {
           ) : (
             <MapView
               style={{ flex: 1, width: SCREEN.width }}
+              mapType="none"
               initialRegion={{
                 latitude: visitedPlaces[0].lat,
                 longitude: visitedPlaces[0].lon,
@@ -716,6 +717,11 @@ export default function ProfileScreen() {
               }}
               showsUserLocation={false}
             >
+              <UrlTile
+                urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                maximumZ={19}
+                flipY={false}
+              />
               {visitedPlaces.map((place, i) => (
                 <Marker
                   key={place.id}
@@ -790,6 +796,7 @@ export default function ProfileScreen() {
             <View style={{ height: 300 }}>
               <MapView
                 style={{ flex: 1 }}
+                mapType="none"
                 region={{
                   latitude: selectedTrip.stops[0]?.lat ?? 20,
                   longitude: selectedTrip.stops[0]?.lon ?? 10,
@@ -797,6 +804,11 @@ export default function ProfileScreen() {
                   longitudeDelta: 70,
                 }}
               >
+                <UrlTile
+                  urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  maximumZ={19}
+                  flipY={false}
+                />
                 {selectedTrip.stops.map((stop, i) => (
                   <Marker
                     key={i}
