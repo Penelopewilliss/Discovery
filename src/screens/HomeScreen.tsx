@@ -26,7 +26,7 @@ import { mockPosts } from '../data/mockData';
 import PostCard from '../components/PostCard';
 import { PostCardSkeleton } from '../components/SkeletonLoader';
 import { Post, PostDelay } from '../types';
-import { useUser } from '../context/UserContext';
+import { useUser, LiveTrip } from '../context/UserContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const STORY_DURATION = 5000; // ms per story
@@ -767,23 +767,56 @@ function StoriesBar({
   stories,
   seenIds,
   onPress,
+  activeLiveTrip,
 }: {
   stories: Story[];
   seenIds: string[];
   onPress: (index: number) => void;
+  activeLiveTrip: LiveTrip | null;
 }) {
   return (
-    <FlatList
+    <ScrollView
       horizontal
-      data={stories}
-      keyExtractor={(s) => s.id}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.storiesList}
-      renderItem={({ item, index }) => {
+    >
+      {/* Live trip bubble — pinned first when trip is active */}
+      {activeLiveTrip && (
+        <TouchableOpacity
+          style={styles.storyItem}
+          activeOpacity={0.8}
+          onPress={() =>
+            Alert.alert(
+              `🔴 LIVE · ${activeLiveTrip.name}`,
+              `${activeLiveTrip.pins.length} stop${activeLiveTrip.pins.length !== 1 ? 's' : ''} dropped so far.\n` +
+                (activeLiveTrip.pins.length > 0
+                  ? activeLiveTrip.pins.map((p) => `📍 ${p.placeName}`).join('\n')
+                  : 'No stops yet — go to Explore to drop your first pin!'),
+            )
+          }
+        >
+          <LinearGradient
+            colors={['#ef4444', '#dc2626']}
+            style={[styles.storyRing, { borderWidth: 0 }]}
+          >
+            <View style={[styles.storyAvatarWrap, { backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center' }]}>
+              <Text style={{ fontSize: 20 }}>📍</Text>
+            </View>
+          </LinearGradient>
+          <View style={{ alignItems: 'center' }}>
+            <View style={styles.livePillBadge}>
+              <Text style={styles.livePillText}>LIVE</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      )}
+      {/* Regular stories */}
+      {stories.map((item, index) => {
         const seen = seenIds.includes(item.id);
         const hasOwnMedia = item.isOwn && !!(item.image || item.videoUri);
         return (
           <TouchableOpacity
+            key={item.id}
             style={styles.storyItem}
             onPress={() => onPress(index)}
             activeOpacity={0.8}
@@ -833,15 +866,15 @@ function StoriesBar({
             </Text>
           </TouchableOpacity>
         );
-      }}
-    />
+      })}
+    </ScrollView>
   );
 }
 
 // ── Home Screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
-  const { tripStories } = useUser();
+  const { tripStories, activeLiveTrip } = useUser();
   const seenTripStoryIds = useRef(new Set<string>());
   const [stories, setStories] = useState<Story[]>(INITIAL_STORIES);
   const [seenIds, setSeenIds] = useState<string[]>(['s3', 's5']);
@@ -1004,7 +1037,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <>
-            <StoriesBar stories={stories} seenIds={seenIds} onPress={handleStoryPress} />
+            <StoriesBar stories={stories} seenIds={seenIds} onPress={handleStoryPress} activeLiveTrip={activeLiveTrip} />
             <FlatList
               horizontal
               data={TAGS}
@@ -1126,6 +1159,15 @@ const styles = StyleSheet.create({
     width: 68,
   },
   storyNameSeen: { color: theme.colors.textMuted },
+  // Live trip LIVE badge under the bubble
+  livePillBadge: {
+    backgroundColor: '#ef4444',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    marginTop: 3,
+  },
+  livePillText: { color: '#fff', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   tagsList: {
     paddingHorizontal: theme.spacing.md,
     paddingBottom: theme.spacing.sm,

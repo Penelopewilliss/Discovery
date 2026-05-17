@@ -12,16 +12,18 @@ import {
   Dimensions,
   Modal,
   Alert,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 import LeafletMapView, { LeafletMapRef } from '../components/LeafletMapView';
 
 const SCREEN = Dimensions.get('window');
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { Place } from '../types';
-import { useUser, VisitedPlace, TripStop, Trip, MapPin } from '../context/UserContext';
+import { useUser, VisitedPlace, TripStop, Trip, MapPin, LiveTrip, LiveTripPin } from '../context/UserContext';
 import PlaceCard from '../components/PlaceCard';
 import GlassCard from '../components/GlassCard';
 import { PlaceCardSkeleton } from '../components/SkeletonLoader';
@@ -51,7 +53,8 @@ function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
 }
 
 export default function ExploreScreen() {
-  const { isVisited, markVisited, removeVisited, createTrip, mapPins, addMapPin, updateMapPin, deleteMapPin } = useUser();
+  const { isVisited, markVisited, removeVisited, createTrip, mapPins, addMapPin, updateMapPin, deleteMapPin,
+    activeLiveTrip, startLiveTrip, addLiveTripPin, endLiveTrip } = useUser();
   const mapRef = useRef<LeafletMapRef>(null);
   const locationSub = useRef<Location.LocationSubscription | null>(null);
   const [query, setQuery] = useState('');
@@ -83,6 +86,15 @@ export default function ExploreScreen() {
   const [editPinModal, setEditPinModal] = useState<MapPin | null>(null);
   const [pinLabel, setPinLabel] = useState('');
   const [pinNote, setPinNote] = useState('');
+
+  // Live trip state
+  const [showStartLiveTrip, setShowStartLiveTrip] = useState(false);
+  const [liveTripName, setLiveTripName] = useState('');
+  const [liveTripPrivacy, setLiveTripPrivacy] = useState<LiveTrip['privacy']>('followers');
+  const [showDropPhotoPin, setShowDropPhotoPin] = useState(false);
+  const [photoPinName, setPhotoPinName] = useState('');
+  const [photoPinNote, setPhotoPinNote] = useState('');
+  const [photoPinUri, setPhotoPinUri] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
   const searchAbortRef = useRef<AbortController>();
 
@@ -399,6 +411,15 @@ export default function ExploreScreen() {
                 label: pin.label,
                 sublabel: pin.note || undefined,
               })),
+              // Live trip pins — shown in red/pink with a camera emoji hint
+              ...(activeLiveTrip?.pins.map((pin) => ({
+                id: pin.id,
+                latitude: pin.latitude,
+                longitude: pin.longitude,
+                color: '#ef4444',
+                label: `📍 ${pin.placeName}`,
+                sublabel: pin.note || undefined,
+              })) ?? []),
             ]}
             onMarkerPress={(id) => {
               if (id.startsWith('pin_')) {
@@ -418,22 +439,60 @@ export default function ExploreScreen() {
           )}
 
           {/* FABs */}
-          <View style={styles.fabRow}>
-            <TouchableOpacity
-              style={styles.dropPinFab}
-              onPress={() => {
-                if (!userLocation) { Alert.alert('Location not available yet'); return; }
-                setAddPinModal({ lat: userLocation.latitude, lon: userLocation.longitude });
-                setPinLabel('');
-                setPinNote('');
-              }}
-            >
-              <Text style={styles.tripFabText}>📍 Drop Here</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.tripFab} onPress={() => setShowTripPlanner(true)}>
-              <Text style={styles.tripFabText}>✈️ Plan Trip</Text>
-            </TouchableOpacity>
-          </View>
+          {activeLiveTrip ? (
+            // ── Live trip active controls ──────────────────────────────
+            <View style={styles.fabRow}>
+              <View style={styles.liveBadge}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveBadgeText}>LIVE · {activeLiveTrip.name}</Text>
+              </View>
+              <View style={styles.liveActions}>
+                <TouchableOpacity
+                  style={styles.photoPinFab}
+                  onPress={() => {
+                    if (!userLocation) { Alert.alert('Waiting for GPS…'); return; }
+                    setPhotoPinName('');
+                    setPhotoPinNote('');
+                    setPhotoPinUri(null);
+                    setShowDropPhotoPin(true);
+                  }}
+                >
+                  <Text style={styles.tripFabText}>📸 Drop Stop</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.endTripFab}
+                  onPress={() =>
+                    Alert.alert('End live trip?', `You dropped ${activeLiveTrip.pins.length} pin${activeLiveTrip.pins.length !== 1 ? 's' : ''}.\nYour followers can still view it.`,
+                      [{ text: 'Cancel', style: 'cancel' }, { text: 'End Trip', style: 'destructive', onPress: endLiveTrip }]
+                    )
+                  }
+                >
+                  <Text style={styles.tripFabText}>■ End</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            // ── Normal map controls ────────────────────────────────────
+            <View style={styles.fabRow}>
+              <TouchableOpacity
+                style={styles.dropPinFab}
+                onPress={() => {
+                  if (!userLocation) { Alert.alert('Location not available yet'); return; }
+                  setAddPinModal({ lat: userLocation.latitude, lon: userLocation.longitude });
+                  setPinLabel('');
+                  setPinNote('');
+                }}
+              >
+                <Text style={styles.tripFabText}>📍 Drop Here</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.tripFab} onPress={() => setShowTripPlanner(true)}>
+                <Text style={styles.tripFabText}>✈️ Plan Trip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.liveStartFab} onPress={() => { setLiveTripName(''); setShowStartLiveTrip(true); }}>
+                <Text style={styles.tripFabText}>🔴 Go Live</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
 
@@ -717,6 +776,130 @@ export default function ExploreScreen() {
                 }}
               >
                 <Text style={styles.pinSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ═══ Start Live Trip Modal ═══ */}
+      <Modal visible={showStartLiveTrip} transparent animationType="slide">
+        <View style={styles.pinOverlay}>
+          <View style={styles.pinBox}>
+            <Text style={styles.pinTitle}>🔴 Start Live Trip</Text>
+            <Text style={styles.liveModalSub}>
+              Followers can watch your pins + photos appear on the map in real time.
+            </Text>
+            <TextInput
+              style={styles.pinInput}
+              placeholder="Trip name (e.g. Road Trip Germany 🚗)"
+              placeholderTextColor={theme.colors.textMuted}
+              value={liveTripName}
+              onChangeText={setLiveTripName}
+              autoFocus
+            />
+            {/* Privacy picker */}
+            <Text style={styles.livePrivacyLabel}>Who can follow?</Text>
+            <View style={styles.livePrivacyRow}>
+              {(['public', 'followers', 'close-friends'] as const).map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.livePrivacyBtn, liveTripPrivacy === p && styles.livePrivacyBtnActive]}
+                  onPress={() => setLiveTripPrivacy(p)}
+                >
+                  <Text style={[styles.livePrivacyText, liveTripPrivacy === p && styles.livePrivacyTextActive]}>
+                    {p === 'public' ? '🌍 Everyone' : p === 'followers' ? '👥 Followers' : '⭐ Close friends'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.pinActions}>
+              <TouchableOpacity style={styles.pinCancel} onPress={() => setShowStartLiveTrip(false)}>
+                <Text style={styles.pinCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.pinSave, { backgroundColor: '#ef4444' }]}
+                onPress={() => {
+                  if (!liveTripName.trim()) { Alert.alert('Name your trip first'); return; }
+                  startLiveTrip(liveTripName.trim(), liveTripPrivacy);
+                  setShowStartLiveTrip(false);
+                  Alert.alert('🔴 You\'re live!', 'Drop your first photo stop using the "📸 Drop Stop" button.');
+                }}
+              >
+                <Text style={styles.pinSaveText}>Go Live 🔴</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ═══ Drop Photo + Pin Modal ═══ */}
+      <Modal visible={showDropPhotoPin} transparent animationType="slide">
+        <View style={styles.pinOverlay}>
+          <View style={styles.pinBox}>
+            <Text style={styles.pinTitle}>📸 Drop a Stop</Text>
+            {/* Photo picker */}
+            <TouchableOpacity
+              style={styles.photoPickerBtn}
+              onPress={async () => {
+                const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (!perm.granted) { Alert.alert('Permission needed to pick photos'); return; }
+                const result = await ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: 'images',
+                  quality: 0.7,
+                  allowsEditing: true,
+                  aspect: [4, 3],
+                });
+                if (!result.canceled && result.assets[0]) {
+                  setPhotoPinUri(result.assets[0].uri);
+                }
+              }}
+            >
+              {photoPinUri ? (
+                <Image source={{ uri: photoPinUri }} style={styles.photoPickerPreview} resizeMode="cover" />
+              ) : (
+                <View style={styles.photoPickerEmpty}>
+                  <Text style={{ fontSize: 32 }}>📷</Text>
+                  <Text style={styles.photoPickerHint}>Tap to add a photo</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.pinInput, { marginTop: 10 }]}
+              placeholder="Place name (e.g. Brandenburg Gate)"
+              placeholderTextColor={theme.colors.textMuted}
+              value={photoPinName}
+              onChangeText={setPhotoPinName}
+            />
+            <TextInput
+              style={[styles.pinInput, { marginTop: 8, minHeight: 60 }]}
+              placeholder="Caption / note (optional)"
+              placeholderTextColor={theme.colors.textMuted}
+              value={photoPinNote}
+              onChangeText={setPhotoPinNote}
+              multiline
+            />
+            <View style={styles.pinActions}>
+              <TouchableOpacity style={styles.pinCancel} onPress={() => setShowDropPhotoPin(false)}>
+                <Text style={styles.pinCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.pinSave, { backgroundColor: '#ef4444' }]}
+                onPress={() => {
+                  if (!photoPinName.trim()) { Alert.alert('Add a place name'); return; }
+                  addLiveTripPin({
+                    id: `lpin_${Date.now()}`,
+                    latitude: userLocation!.latitude,
+                    longitude: userLocation!.longitude,
+                    photoUri: photoPinUri ?? undefined,
+                    note: photoPinNote.trim(),
+                    placeName: photoPinName.trim(),
+                    timestamp: Date.now(),
+                  });
+                  setShowDropPhotoPin(false);
+                }}
+              >
+                <Text style={styles.pinSaveText}>📍 Drop Pin</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1009,9 +1192,6 @@ const styles = StyleSheet.create({
     bottom: 24,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
     paddingHorizontal: 16,
   },
   dropPinFab: {
@@ -1025,6 +1205,103 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  liveStartFab: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 28,
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  photoPinFab: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 28,
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  endTripFab: {
+    backgroundColor: '#374151',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 28,
+    elevation: 8,
+  },
+  // Live trip badge
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(239,68,68,0.92)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginBottom: 10,
+    gap: 6,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+  },
+  liveBadgeText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  liveActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  // Live trip modals
+  liveModalSub: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  livePrivacyLabel: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  livePrivacyRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 4 },
+  livePrivacyBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  livePrivacyBtnActive: { backgroundColor: '#ef4444', borderColor: '#ef4444' },
+  livePrivacyText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600' },
+  livePrivacyTextActive: { color: '#fff' },
+  // Photo pin modal
+  photoPickerBtn: {
+    width: '100%',
+    height: 140,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    borderStyle: 'dashed',
+  },
+  photoPickerPreview: { width: '100%', height: '100%' },
+  photoPickerEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.background,
+    gap: 8,
+  },
+  photoPickerHint: { color: theme.colors.textMuted, fontSize: 13 },
   // Pin modals
   pinOverlay: {
     flex: 1,

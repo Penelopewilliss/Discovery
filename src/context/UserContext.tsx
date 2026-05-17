@@ -44,6 +44,24 @@ export type MapPin = {
   createdAt: string;
 };
 
+export type LiveTripPin = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  photoUri?: string;        // optional photo attached to this stop
+  note: string;
+  placeName: string;        // user-typed place / landmark name
+  timestamp: number;        // ms
+};
+
+export type LiveTrip = {
+  id: string;
+  name: string;
+  startedAt: number;        // ms
+  pins: LiveTripPin[];
+  privacy: 'public' | 'followers' | 'close-friends';
+};
+
 export type TripStory = {
   id: string;
   username: string;
@@ -72,6 +90,10 @@ type UserContextType = {
   deleteMapPin: (id: string) => void;
   tripStories: TripStory[];
   addTripStory: (s: TripStory) => void;
+  activeLiveTrip: LiveTrip | null;
+  startLiveTrip: (name: string, privacy: LiveTrip['privacy']) => void;
+  addLiveTripPin: (pin: LiveTripPin) => void;
+  endLiveTrip: () => void;
 };
 
 const UserContext = createContext<UserContextType>({
@@ -90,6 +112,10 @@ const UserContext = createContext<UserContextType>({
   deleteMapPin: () => {},
   tripStories: [],
   addTripStory: () => {},
+  activeLiveTrip: null,
+  startLiveTrip: () => {},
+  addLiveTripPin: () => {},
+  endLiveTrip: () => {},
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
@@ -98,6 +124,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [mapPins, setMapPins] = useState<MapPin[]>([]);
   const [tripStories, setTripStories] = useState<TripStory[]>([]);
+  const [activeLiveTrip, setActiveLiveTrip] = useState<LiveTrip | null>(null);
 
   // Load persisted map pins on mount
   useEffect(() => {
@@ -133,6 +160,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const addTripStory = (s: TripStory) => setTripStories((prev) => [s, ...prev]);
 
+  const startLiveTrip = (name: string, privacy: LiveTrip['privacy']) =>
+    setActiveLiveTrip({ id: `live_${Date.now()}`, name, startedAt: Date.now(), pins: [], privacy });
+
+  const addLiveTripPin = (pin: LiveTripPin) =>
+    setActiveLiveTrip((prev) => prev ? { ...prev, pins: [...prev.pins, pin] } : prev);
+
+  const endLiveTrip = () => setActiveLiveTrip(null);
+
   return (
     <UserContext.Provider value={{
       user, setUser,
@@ -140,6 +175,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       trips, createTrip, deleteTrip,
       mapPins, addMapPin, updateMapPin, deleteMapPin,
       tripStories, addTripStory,
+      activeLiveTrip, startLiveTrip, addLiveTripPin, endLiveTrip,
     }}>
       {children}
     </UserContext.Provider>
