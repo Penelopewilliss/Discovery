@@ -12,7 +12,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 import { Trip, TripStop, useUser } from '../context/UserContext';
-import { addPost } from '../data/mockData';
+import { createPostInFirestore } from '../services/postsService';
 import LeafletMapView, { LMarker, LRegion } from './LeafletMapView';
 
 const BG_IMAGES = [
@@ -91,22 +91,22 @@ export default function TripShareSheet({ trip, onClose }: Props) {
 
   const postImageUrl = includeMap && staticMapUrl ? staticMapUrl : bgImage;
 
-  const shareToFeed = () => {
-    addPost({
+  const shareToFeed = async () => {
+    await createPostInFirestore({
       id: `trip_post_${Date.now()}`,
-      userId: 'user_1',
+      userId: user?.id ?? 'user_1',
       username: user?.username ?? 'traveler',
-      userAvatar:
-        user?.avatarUri ??
-        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
+      userAvatar: user?.avatarUri ?? null,
       imageUrl: postImageUrl,
-      caption: caption.trim() || `Just planned my trip: ${trip.name} \u2708\ufe0f`,
+      caption: caption.trim() || `Just shared my trip: ${trip.name} ✈️`,
       locationArea: stopNames[0] ?? 'Unknown',
-      destination: stopNames.join(' \u2192 '),
+      destination: stopNames.join(' → '),
       tags: ['adventure'],
       mood: 'wanderlust',
       likes: 0,
+      likesCount: 0,
       comments: 0,
+      commentsCount: 0,
       delay: 'now',
       privacy,
       hideExactLocation: false,
@@ -118,6 +118,7 @@ export default function TripShareSheet({ trip, onClose }: Props) {
       reactions: {},
       userReaction: null,
       reactionsEnabled: true,
+      media: postImageUrl ? [{ uri: postImageUrl, type: 'photo' }] : [],
       tripShare: {
         tripName: trip.name,
         stops: stopNames,
@@ -126,7 +127,7 @@ export default function TripShareSheet({ trip, onClose }: Props) {
         mapIncluded: includeMap,
       },
     });
-    Alert.alert('Posted! \ud83c\udf89', 'Your trip card is live on the feed.', [
+    Alert.alert('Posted! 🎉', 'Your trip card is live on the feed.', [
       { text: 'OK', onPress: onClose },
     ]);
   };
