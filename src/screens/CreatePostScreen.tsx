@@ -21,6 +21,7 @@ import { theme } from '../theme';
 import { addPost, mockPlaces } from '../data/mockData';
 import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem } from '../types';
 import GlassCard from '../components/GlassCard';
+import { useUser } from '../context/UserContext';
 import { scheduleLocalNotification, scheduleDelayedPostNotification } from '../utils/notifications';
 import { searchFsqPlaces, FsqPlace } from '../utils/foursquare';
 
@@ -43,8 +44,10 @@ const PRIVACY_OPTIONS: { label: string; value: PrivacyLevel }[] = [
 let postCounter = 100;
 
 export default function CreatePostScreen() {
+  const { markVisited } = useUser();
   const [caption, setCaption] = useState('');
   const [destination, setDestination] = useState('');
+  const [selectedPlaceFsq, setSelectedPlaceFsq] = useState<FsqPlace | null>(null);
   const [selectedTags, setSelectedTags] = useState<TravelTag[]>([]);
   const [selectedMood, setSelectedMood] = useState<TravelMood>('wanderlust');
   const [delay, setDelay] = useState<PostDelay>('24h');
@@ -87,6 +90,7 @@ export default function CreatePostScreen() {
 
   const pickSuggestion = (place: FsqPlace) => {
     setDestination(`${place.name}${place.location.country ? ', ' + place.location.country : ''}`);
+    setSelectedPlaceFsq(place);
     setSuggestions([]);
     setShowSuggestions(false);
   };
@@ -181,6 +185,33 @@ export default function CreatePostScreen() {
     };
 
     addPost(newPost);
+
+    // Auto-mark the tagged place as visited
+    if (selectedPlaceFsq) {
+      const geo = selectedPlaceFsq.geocodes?.main;
+      if (geo) {
+        markVisited({
+          id: selectedPlaceFsq.fsq_id ?? `post_place_${Date.now()}`,
+          name: selectedPlaceFsq.name,
+          country: selectedPlaceFsq.location.country ?? selectedPlaceFsq.location.locality ?? '',
+          lat: geo.latitude,
+          lon: geo.longitude,
+          coverImage: mediaItems[0]?.uri ?? '',
+          visitedAt: new Date().toISOString(),
+        });
+      }
+    } else if (destination.trim()) {
+      // Plain text destination typed (no suggestion picked) — still add as a visited entry
+      markVisited({
+        id: `post_dest_${Date.now()}`,
+        name: destination.trim(),
+        country: '',
+        lat: 0,
+        lon: 0,
+        coverImage: mediaItems[0]?.uri ?? '',
+        visitedAt: new Date().toISOString(),
+      });
+    }
 
     // Send local notification feedback
     if (delay === 'now') {

@@ -97,6 +97,8 @@ export default function ExploreScreen() {
   const [photoPinName, setPhotoPinName] = useState('');
   const [photoPinNote, setPhotoPinNote] = useState('');
   const [photoPinUri, setPhotoPinUri] = useState<string | null>(null);
+  // 'now' = add to visited immediately, 'end' = add at end of trip, 'no' = don't add
+  const [addToVisitedMode, setAddToVisitedMode] = useState<'now' | 'end' | 'no'>('now');
   // Summary / end-trip sheet
   const [summaryMode, setSummaryMode] = useState<'view' | 'end' | null>(null);
 
@@ -914,6 +916,28 @@ export default function ExploreScreen() {
               onChangeText={setPhotoPinNote}
               multiline
             />
+            {/* Add to visited options */}
+            <Text style={[styles.pinInput, { borderWidth: 0, paddingHorizontal: 0, marginTop: 12, marginBottom: 4, fontSize: 13, color: theme.colors.textMuted }]}>
+              Add to visited places?
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              {(['now', 'end', 'no'] as const).map((opt) => (
+                <TouchableOpacity
+                  key={opt}
+                  onPress={() => setAddToVisitedMode(opt)}
+                  style={{
+                    flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center',
+                    backgroundColor: addToVisitedMode === opt ? theme.colors.accent : theme.colors.background,
+                    borderWidth: 1,
+                    borderColor: addToVisitedMode === opt ? theme.colors.accent : theme.colors.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: addToVisitedMode === opt ? '#fff' : theme.colors.textMuted }}>
+                    {opt === 'now' ? '✅ Now' : opt === 'end' ? '⏳ At end' : '✖ Skip'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <View style={styles.pinActions}>
               <TouchableOpacity style={styles.pinCancel} onPress={() => setShowDropPhotoPin(false)}>
                 <Text style={styles.pinCancelText}>Cancel</Text>
@@ -922,7 +946,7 @@ export default function ExploreScreen() {
                 style={[styles.pinSave, { backgroundColor: '#ef4444' }]}
                 onPress={() => {
                   if (!photoPinName.trim()) { Alert.alert('Add a place name'); return; }
-                  addLiveTripPin({
+                  const pin = {
                     id: `lpin_${Date.now()}`,
                     latitude: userLocation!.latitude,
                     longitude: userLocation!.longitude,
@@ -930,7 +954,22 @@ export default function ExploreScreen() {
                     note: photoPinNote.trim(),
                     placeName: photoPinName.trim(),
                     timestamp: Date.now(),
-                  });
+                    addToVisited: addToVisitedMode,
+                  };
+                  addLiveTripPin(pin);
+                  // Add to visited places based on user's choice
+                  if (addToVisitedMode === 'now') {
+                    markVisited({
+                      id: `livepin_${pin.id}`,
+                      name: pin.placeName,
+                      country: '',
+                      lat: pin.latitude,
+                      lon: pin.longitude,
+                      coverImage: pin.photoUri ?? '',
+                      visitedAt: new Date().toISOString(),
+                    });
+                  }
+                  // 'end' mode pins are handled in LiveTripSummarySheet.onEnd
                   setShowDropPhotoPin(false);
                   Alert.alert(
                     '📍 Stop dropped!',
@@ -951,7 +990,24 @@ export default function ExploreScreen() {
           trip={activeLiveTrip}
           mode={summaryMode}
           onClose={() => setSummaryMode(null)}
-          onEnd={() => { endLiveTrip(); setSummaryMode(null); }}
+          onEnd={() => {
+            // Mark 'end'-mode pins as visited now that the trip is finishing
+            if (activeLiveTrip) {
+              activeLiveTrip.pins
+                .filter((p) => p.addToVisited === 'end')
+                .forEach((p) => markVisited({
+                  id: `livepin_${p.id}`,
+                  name: p.placeName,
+                  country: '',
+                  lat: p.latitude,
+                  lon: p.longitude,
+                  coverImage: p.photoUri ?? '',
+                  visitedAt: new Date().toISOString(),
+                }));
+            }
+            endLiveTrip();
+            setSummaryMode(null);
+          }}
         />
       )}
     </SafeAreaView>

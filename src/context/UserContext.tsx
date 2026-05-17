@@ -52,6 +52,7 @@ export type LiveTripPin = {
   note: string;
   placeName: string;        // user-typed place / landmark name
   timestamp: number;        // ms
+  addToVisited?: 'now' | 'end' | 'no'; // when to add this stop to visited places
 };
 
 export type LiveTrip = {
@@ -190,7 +191,25 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const createTrip = (trip: Trip) => setTrips((prev) => [trip, ...prev]);
   const deleteTrip = (id: string) => setTrips((prev) => prev.filter((t) => t.id !== id));
 
-  const addMapPin = (pin: MapPin) => savePins([...mapPins, pin]);
+  const addMapPin = (pin: MapPin) => {
+    savePins([...mapPins, pin]);
+    // Auto-add to visited places when a pin is dropped
+    const vp: VisitedPlace = {
+      id: `pin_${pin.id}`,
+      name: pin.label,
+      country: '',          // pins don't carry country — shown as "Pinned location"
+      lat: pin.lat,
+      lon: pin.lon,
+      coverImage: '',
+      visitedAt: pin.createdAt,
+    };
+    setVisitedPlaces((prev) => {
+      if (prev.find((p) => p.id === vp.id)) return prev;
+      const next = [...prev, vp];
+      AsyncStorage.setItem('visitedPlaces', JSON.stringify(next));
+      return next;
+    });
+  };
   const updateMapPin = (id: string, label: string, note: string) =>
     savePins(mapPins.map((p) => (p.id === id ? { ...p, label, note } : p)));
   const deleteMapPin = (id: string) => savePins(mapPins.filter((p) => p.id !== id));
