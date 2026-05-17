@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { theme } from './src/theme';
@@ -107,27 +106,9 @@ export default function App() {
 }
 
 function AppNavigator() {
-  const { user, setUser } = useUser();
-  const [isLoading, setIsLoading] = useState(true);
+  const { user, authLoading } = useUser();
 
-  useEffect(() => {
-    // Restore session from storage
-    AsyncStorage.getItem('@travlora_user')
-      .then((stored) => {
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed.username?.includes('@')) {
-            parsed.username =
-              parsed.username.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || 'traveler';
-          }
-          setUser(parsed);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  if (isLoading) {
+  if (authLoading) {
     return (
       <View style={styles.splash}>
         <LinearGradient colors={['#07070F', '#12102A', '#1A0A2E']} style={StyleSheet.absoluteFill} />

@@ -84,7 +84,8 @@ export type TripStory = {
 
 type UserContextType = {
   user: LoggedInUser | null;
-  setUser: (u: LoggedInUser) => void;
+  setUser: (u: LoggedInUser | null) => void;
+  authLoading: boolean;
   visitedPlaces: VisitedPlace[];
   markVisited: (place: VisitedPlace) => void;
   removeVisited: (id: string) => void;
@@ -112,6 +113,7 @@ type UserContextType = {
 const UserContext = createContext<UserContextType>({
   user: null,
   setUser: () => {},
+  authLoading: true,
   visitedPlaces: [],
   markVisited: () => {},
   removeVisited: () => {},
@@ -138,6 +140,7 @@ const UserContext = createContext<UserContextType>({
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<LoggedInUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [visitedPlaces, setVisitedPlaces] = useState<VisitedPlace[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [mapPins, setMapPins] = useState<MapPin[]>([]);
@@ -150,13 +153,29 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (snap.exists()) setUser(snap.data() as LoggedInUser);
+        if (snap.exists()) {
+          setUser(snap.data() as LoggedInUser);
+        } else {
+          // Firebase Auth session exists but no Firestore profile yet —
+          // build a minimal user so the app stays functional
+          setUser({
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName ?? '',
+            username: (firebaseUser.email ?? 'traveler').split('@')[0],
+            email: firebaseUser.email ?? '',
+            avatarUri: firebaseUser.photoURL ?? null,
+            bio: '',
+            homeCountry: '',
+            interests: [],
+          });
+        }
       } else {
         setUser(null);
       }
+      setAuthLoading(false);
     });
     return unsub;
-  }, []);
+  }, [];
 
   // Load persisted data on mount
   useEffect(() => {
@@ -279,7 +298,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <UserContext.Provider value={{
-      user, setUser,
+      user, setUser, authLoading,
       visitedPlaces, markVisited, removeVisited, isVisited,
       trips, createTrip, deleteTrip,
       mapPins, addMapPin, updateMapPin, deleteMapPin,
