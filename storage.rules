@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Avatars ───────────────────────────────────────────────────────────────
+    // avatars/{uid}/avatar.jpg
+    // Any signed-in user can view avatars (shown in PostCard, feed, etc.)
+    // Only the owner can upload/replace/delete their own avatar
+    match /avatars/{uid}/{allPaths=**} {
+      allow read:   if request.auth != null;
+      allow write:  if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Post media ────────────────────────────────────────────────────────────
+    // post-media/{uid}/{postId}/{index}.jpg
+    // Any signed-in user can read post images
+    // Only the uploader (uid) can write to their own folder
+    match /post-media/{uid}/{allPaths=**} {
+      allow read:   if request.auth != null;
+      allow write:  if request.auth != null && request.auth.uid == uid
+                    // Max 20 MB per file
+                    && request.resource.size <= 20 * 1024 * 1024
+                    // Only images and videos
+                    && (request.resource.contentType.matches('image/.*')
+                        || request.resource.contentType.matches('video/.*'));
+    }
+  }
+}

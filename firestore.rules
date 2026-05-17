@@ -1,0 +1,77 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    // User must be signed in
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Request is from the owner of this document
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // Only the listed fields are being changed (nothing else snuck in)
+    function onlyFields(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    // /users/{uid}
+    match /users/{uid} {
+      // Any signed-in user can read a profile (for PostCard author info etc.)
+      allow read: if isAuth();
+
+      // Only the account owner can create their profile doc
+      allow create: if isOwner(uid);
+
+      // Owner can update anything on their own profile.
+      // Other signed-in users can ONLY touch the social-interaction arrays
+      // (likedPostIds, savedPostIds, reactionsByPost) — never name/email/avatar etc.
+      allow update: if isOwner(uid)
+                    || (isAuth() && onlyFields(['likedPostIds', 'savedPostIds', 'reactionsByPost']));
+
+      // Only the owner can delete their profile
+      allow delete: if isOwner(uid);
+    }
+
+    // ── Posts ─────────────────────────────────────────────────────────────────
+    // /posts/{postId}
+    match /posts/{postId} {
+      // Any signed-in user can read posts
+      allow read: if isAuth();
+
+      // Only authenticated users can create a post, and the userId field
+      // must match the caller — prevents posting as someone else
+      allow create: if isAuth()
+                    && request.resource.data.userId == request.auth.uid;
+
+      // Post owner can edit anything.
+      // Any signed-in user can bump engagement counters and reactions
+      // (likesCount, commentsCount, reactions map) — but nothing else.
+      allow update: if isOwner(resource.data.userId)
+                    || (isAuth() && onlyFields(['likesCount', 'commentsCount', 'reactions']));
+
+      // Only the post owner can delete their post
+      allow delete: if isOwner(resource.data.userId);
+
+      // ── Comments subcollection ────────────────────────────────────────────
+      // /posts/{postId}/comments/{commentId}
+      match /comments/{commentId} {
+        // Any signed-in user can read comments
+        allow read: if isAuth();
+
+        // Any signed-in user can post a comment, userId must match caller
+        allow create: if isAuth()
+                      && request.resource.data.userId == request.auth.uid;
+
+        // Only the comment author can edit or delete their comment
+        allow update, delete: if isOwner(resource.data.userId);
+      }
+    }
+  }
+}
