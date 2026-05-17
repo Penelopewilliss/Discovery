@@ -129,7 +129,10 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerLeft} onPress={() => setShowUserProfile(true)} activeOpacity={0.7}>
-          <Image source={{ uri: post.userAvatar }} style={styles.avatar} />
+          {post.userAvatar
+            ? <Image source={{ uri: post.userAvatar }} style={styles.avatar} />
+            : <View style={[styles.avatar, styles.avatarPlaceholder]}><Text style={styles.avatarInitial}>{(post.username?.[0] ?? '?').toUpperCase()}</Text></View>
+          }
           <View style={styles.headerInfo}>
             <Text style={styles.username}>@{post.username}</Text>
             <Text style={styles.location}>
@@ -460,6 +463,16 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 2,
     borderColor: theme.colors.primary,
+  },
+  avatarPlaceholder: {
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 16,
   },
   headerInfo: {
     flex: 1,

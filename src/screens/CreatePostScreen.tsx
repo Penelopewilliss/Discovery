@@ -44,7 +44,7 @@ const PRIVACY_OPTIONS: { label: string; value: PrivacyLevel }[] = [
 let postCounter = 100;
 
 export default function CreatePostScreen() {
-  const { markVisited } = useUser();
+  const { markVisited, user } = useUser();
   const [caption, setCaption] = useState('');
   const [destination, setDestination] = useState('');
   const [selectedPlaceFsq, setSelectedPlaceFsq] = useState<FsqPlace | null>(null);
@@ -159,9 +159,9 @@ export default function CreatePostScreen() {
     postCounter += 1;
     const newPost: Post = {
       id: `post_new_${postCounter}`,
-      userId: 'user_1',
-      username: 'aurora.travels',
-      userAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
+      userId: user?.id ?? 'user_1',
+      username: user?.username ?? 'aurora.travels',
+      userAvatar: user?.avatar ?? null,
       imageUrl: mediaItems.length > 0 ? mediaItems[0].uri : mockPlaces[Math.floor(Math.random() * mockPlaces.length)].coverImage,
       mediaItems: mediaItems.length > 0 ? mediaItems : undefined,
       caption,
