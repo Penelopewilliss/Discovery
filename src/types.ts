@@ -83,6 +83,12 @@ export interface Post {
   reactions: Record<string, number>;
   userReaction: string | null;
   reactionsEnabled: boolean;
+  tripShare?: {
+    tripName: string;
+    stops: string[];
+    countries: string[];
+    stopCount: number;
+  };
 }
 
 export interface Place {

@@ -155,8 +155,40 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
         </View>
       </View>
 
-      {/* Image / Carousel */}
-      {(() => {
+      {/* Trip Card Visual — shown instead of image for trip share posts */}
+      {post.tripShare ? (
+        <LinearGradient
+          colors={['#6366f1', '#8b5cf6', '#a78bfa']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.tripCardBanner}
+        >
+          <Text style={styles.tripCardEmoji}>✈️</Text>
+          <Text style={styles.tripCardName} numberOfLines={2}>
+            {post.tripShare.tripName}
+          </Text>
+          <Text style={styles.tripCardMeta}>
+            {post.tripShare.stopCount} stop{post.tripShare.stopCount !== 1 ? 's' : ''} ·{' '}
+            {post.tripShare.countries.length} countr{post.tripShare.countries.length !== 1 ? 'ies' : 'y'}
+          </Text>
+          <View style={styles.tripCardRoute}>
+            {post.tripShare.stops.slice(0, 4).map((name, i) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {i > 0 && <Text style={styles.tripCardArrow}>  →  </Text>}
+                <View style={styles.tripCardStopPill}>
+                  <Text style={styles.tripCardStop} numberOfLines={1}>{name}</Text>
+                </View>
+              </View>
+            ))}
+            {post.tripShare.stops.length > 4 && (
+              <Text style={styles.tripCardMore}>  +{post.tripShare.stops.length - 4}</Text>
+            )}
+          </View>
+          <Text style={styles.tripCardWatermark}>HiddenGems · Trip Plan</Text>
+        </LinearGradient>
+      ) : (
+      /* Image / Carousel */
+      (() => {
         const items: MediaItem[] = post.mediaItems && post.mediaItems.length > 0
           ? post.mediaItems
           : [{ uri: post.imageUrl, type: 'photo' }];
@@ -231,7 +263,9 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
             </View>
           </View>
         );
-      })()}
+      })()
+      /* end carousel */
+      )}
 
       {/* Tags */}
       <View style={styles.tags}>
@@ -463,6 +497,33 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 300,
     position: 'relative',
+  },
+  // Trip card visual
+  tripCardBanner: {
+    borderRadius: 0,
+    padding: 24,
+    minHeight: 180,
+  },
+  tripCardEmoji: { fontSize: 32, marginBottom: 8 },
+  tripCardName: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 4 },
+  tripCardMeta: { color: 'rgba(255,255,255,0.75)', fontSize: 13, marginBottom: 12 },
+  tripCardRoute: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 },
+  tripCardArrow: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
+  tripCardStopPill: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    maxWidth: 110,
+    marginBottom: 6,
+  },
+  tripCardStop: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  tripCardMore: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+  tripCardWatermark: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
+    fontStyle: 'italic',
+    textAlign: 'right',
   },
   image: {
     width: '100%',

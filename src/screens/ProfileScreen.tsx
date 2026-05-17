@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LeafletMapView from '../components/LeafletMapView';
+import TripShareSheet from '../components/TripShareSheet';
 
 const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
@@ -78,6 +79,7 @@ const BADGE_COLORS = [
 
 export default function ProfileScreen() {
   const { user: loggedInUser, setUser, visitedPlaces, trips, deleteTrip } = useUser();
+  const [sharingTrip, setSharingTrip] = useState<Trip | null>(null);
   const user = mockUser;
   const [privateProfile, setPrivateProfile] = useState(user.privateProfile);
   const [hideLocation, setHideLocation] = useState(user.hideExactLocation);
@@ -464,11 +466,22 @@ export default function ProfileScreen() {
                       <Text style={styles.tripCardMore}>+{trip.stops.length - 4}</Text>
                     )}
                   </View>
-                  <Text style={styles.tripCardTap}>Tap to view on map →</Text>
+                  <View style={styles.tripCardFooter}>
+                    <Text style={styles.tripCardTap}>Tap to view on map →</Text>
+                    <TouchableOpacity
+                      onPress={(e) => { e.stopPropagation?.(); setSharingTrip(trip); }}
+                      style={styles.tripShareBtn}
+                    >
+                      <Text style={styles.tripShareBtnText}>↗ Share</Text>
+                    </TouchableOpacity>
+                  </View>
                 </GlassCard>
               </TouchableOpacity>
             ))
           )}
+
+          {/* Trip Share Sheet */}
+          <TripShareSheet trip={sharingTrip} onClose={() => setSharingTrip(null)} />
 
           {/* Country Picker Modal */}
           <Modal visible={showCountryPicker} animationType="slide" presentationStyle="pageSheet">
@@ -1469,7 +1482,20 @@ const styles = StyleSheet.create({
   tripCardArrow: { color: theme.colors.textMuted, marginHorizontal: 4, fontSize: 13 },
   tripCardStopName: { color: theme.colors.textSecondary, fontSize: 13, maxWidth: 80 },
   tripCardMore: { color: theme.colors.primary, fontSize: 13, fontWeight: '700', marginLeft: 4 },
-  tripCardTap: { color: theme.colors.textMuted, fontSize: 12 },
+  tripCardTap: { color: theme.colors.textMuted, fontSize: 12, flex: 1 },
+  tripCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  tripShareBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  tripShareBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   // Trip Detail Modal
   tripDetailModal: { flex: 1, backgroundColor: theme.colors.background, paddingTop: 56 },
   tripModalHeader: {

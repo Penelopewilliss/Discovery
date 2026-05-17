@@ -26,6 +26,7 @@ import { mockPosts } from '../data/mockData';
 import PostCard from '../components/PostCard';
 import { PostCardSkeleton } from '../components/SkeletonLoader';
 import { Post, PostDelay } from '../types';
+import { useUser } from '../context/UserContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const STORY_DURATION = 5000; // ms per story
@@ -840,6 +841,8 @@ function StoriesBar({
 // ── Home Screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
+  const { tripStories } = useUser();
+  const seenTripStoryIds = useRef(new Set<string>());
   const [stories, setStories] = useState<Story[]>(INITIAL_STORIES);
   const [seenIds, setSeenIds] = useState<string[]>(['s3', 's5']);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
@@ -855,6 +858,28 @@ export default function HomeScreen() {
   const markSeen = useCallback((id: string) => {
     setSeenIds((prev) => [...new Set([...prev, id])]);
   }, []);
+
+  // Inject new trip stories shared from the Trips tab into the stories row
+  useEffect(() => {
+    const fresh = tripStories.filter((s) => !seenTripStoryIds.current.has(s.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((s) => seenTripStoryIds.current.add(s.id));
+    setStories((prev) => [
+      prev[0], // keep the "Your Story" + bubble
+      ...fresh.map((s) => ({
+        id: s.id,
+        username: s.username,
+        avatar: s.avatar,
+        image: s.bgImage,
+        isOwn: true,
+        timestamp: 'now',
+        createdAt: s.createdAt,
+        overlayText: `✈️ ${s.tripName}\n${s.stops.slice(0, 3).join(' → ')}${s.stops.length > 3 ? ' +more' : ''}`,
+        location: s.stops[0] ?? null,
+      })),
+      ...prev.slice(1),
+    ]);
+  }, [tripStories]);
 
   // Remove stories older than 18 hours (check every minute)
   useEffect(() => {

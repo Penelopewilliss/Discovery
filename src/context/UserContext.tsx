@@ -44,6 +44,17 @@ export type MapPin = {
   createdAt: string;
 };
 
+export type TripStory = {
+  id: string;
+  username: string;
+  avatar: string | null;
+  bgImage: string;
+  tripName: string;
+  stops: string[];
+  caption: string;
+  createdAt: number; // ms timestamp
+};
+
 type UserContextType = {
   user: LoggedInUser | null;
   setUser: (u: LoggedInUser) => void;
@@ -58,6 +69,8 @@ type UserContextType = {
   addMapPin: (pin: MapPin) => void;
   updateMapPin: (id: string, label: string, note: string) => void;
   deleteMapPin: (id: string) => void;
+  tripStories: TripStory[];
+  addTripStory: (s: TripStory) => void;
 };
 
 const UserContext = createContext<UserContextType>({
@@ -74,6 +87,8 @@ const UserContext = createContext<UserContextType>({
   addMapPin: () => {},
   updateMapPin: () => {},
   deleteMapPin: () => {},
+  tripStories: [],
+  addTripStory: () => {},
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
@@ -81,6 +96,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [visitedPlaces, setVisitedPlaces] = useState<VisitedPlace[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [mapPins, setMapPins] = useState<MapPin[]>([]);
+  const [tripStories, setTripStories] = useState<TripStory[]>([]);
 
   // Load persisted map pins on mount
   useEffect(() => {
@@ -114,12 +130,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     savePins(mapPins.map((p) => (p.id === id ? { ...p, label, note } : p)));
   const deleteMapPin = (id: string) => savePins(mapPins.filter((p) => p.id !== id));
 
+  const addTripStory = (s: TripStory) => setTripStories((prev) => [s, ...prev]);
+
   return (
     <UserContext.Provider value={{
       user, setUser,
       visitedPlaces, markVisited, removeVisited, isVisited,
       trips, createTrip, deleteTrip,
       mapPins, addMapPin, updateMapPin, deleteMapPin,
+      tripStories, addTripStory,
     }}>
       {children}
     </UserContext.Provider>
