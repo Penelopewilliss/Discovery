@@ -24,6 +24,7 @@ import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { Place } from '../types';
 import { useUser, VisitedPlace, TripStop, Trip, MapPin, LiveTrip, LiveTripPin } from '../context/UserContext';
+import LiveTripSummarySheet from '../components/LiveTripSummarySheet';
 import PlaceCard from '../components/PlaceCard';
 import GlassCard from '../components/GlassCard';
 import { PlaceCardSkeleton } from '../components/SkeletonLoader';
@@ -91,10 +92,44 @@ export default function ExploreScreen() {
   const [showStartLiveTrip, setShowStartLiveTrip] = useState(false);
   const [liveTripName, setLiveTripName] = useState('');
   const [liveTripPrivacy, setLiveTripPrivacy] = useState<LiveTrip['privacy']>('followers');
+  // Drop-stop modal (photo is picked BEFORE modal opens to avoid Modal + native picker conflict)
   const [showDropPhotoPin, setShowDropPhotoPin] = useState(false);
   const [photoPinName, setPhotoPinName] = useState('');
   const [photoPinNote, setPhotoPinNote] = useState('');
   const [photoPinUri, setPhotoPinUri] = useState<string | null>(null);
+  // Summary / end-trip sheet
+  const [summaryMode, setSummaryMode] = useState<'view' | 'end' | null>(null);
+
+  /** Pick a photo (camera or gallery) then open the drop-stop modal */
+  const openDropStop = async (sourceType: 'camera' | 'gallery' | 'none') => {
+    if (!userLocation) { Alert.alert('Waiting for GPS…'); return; }
+    setPhotoPinName('');
+    setPhotoPinNote('');
+    setPhotoPinUri(null);
+
+    if (sourceType === 'none') {
+      setShowDropPhotoPin(true);
+      return;
+    }
+    const perm = sourceType === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow access to continue.', [
+        { text: 'OK', onPress: () => setShowDropPhotoPin(true) },
+      ]);
+      return;
+    }
+    const result = sourceType === 'camera'
+      ? await ImagePicker.launchCameraAsync({ quality: 0.7, allowsEditing: true, aspect: [4, 3] })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.7, allowsEditing: true, aspect: [4, 3] });
+
+    if (!result.canceled && result.assets[0]) {
+      setPhotoPinUri(result.assets[0].uri);
+    }
+    // Open the modal AFTER picker has fully closed
+    setShowDropPhotoPin(true);
+  };
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
   const searchAbortRef = useRef<AbortController>();
 
@@ -449,23 +484,28 @@ export default function ExploreScreen() {
               <View style={styles.liveActions}>
                 <TouchableOpacity
                   style={styles.photoPinFab}
-                  onPress={() => {
-                    if (!userLocation) { Alert.alert('Waiting for GPS…'); return; }
-                    setPhotoPinName('');
-                    setPhotoPinNote('');
-                    setPhotoPinUri(null);
-                    setShowDropPhotoPin(true);
-                  }}
+                  onPress={() =>
+                    Alert.alert('Add a Stop', 'How do you want to capture this moment?', [
+                      { text: '📷 Take Photo', onPress: () => openDropStop('camera') },
+                      { text: '🖼️ From Gallery', onPress: () => openDropStop('gallery') },
+                      { text: '📍 Just Pin (no photo)', onPress: () => openDropStop('none') },
+                      { text: 'Cancel', style: 'cancel' },
+                    ])
+                  }
                 >
                   <Text style={styles.tripFabText}>📸 Drop Stop</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
+                  style={styles.viewStopsFab}
+                  onPress={() => setSummaryMode('view')}
+                >
+                  <Text style={styles.tripFabText}>
+                    👁 {activeLiveTrip.pins.length}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={styles.endTripFab}
-                  onPress={() =>
-                    Alert.alert('End live trip?', `You dropped ${activeLiveTrip.pins.length} pin${activeLiveTrip.pins.length !== 1 ? 's' : ''}.\nYour followers can still view it.`,
-                      [{ text: 'Cancel', style: 'cancel' }, { text: 'End Trip', style: 'destructive', onPress: endLiveTrip }]
-                    )
-                  }
+                  onPress={() => setSummaryMode('end')}
                 >
                   <Text style={styles.tripFabText}>■ End</Text>
                 </TouchableOpacity>
@@ -474,23 +514,25 @@ export default function ExploreScreen() {
           ) : (
             // ── Normal map controls ────────────────────────────────────
             <View style={styles.fabRow}>
-              <TouchableOpacity
-                style={styles.dropPinFab}
-                onPress={() => {
-                  if (!userLocation) { Alert.alert('Location not available yet'); return; }
-                  setAddPinModal({ lat: userLocation.latitude, lon: userLocation.longitude });
-                  setPinLabel('');
-                  setPinNote('');
-                }}
-              >
-                <Text style={styles.tripFabText}>📍 Drop Here</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.tripFab} onPress={() => setShowTripPlanner(true)}>
-                <Text style={styles.tripFabText}>✈️ Plan Trip</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.liveStartFab} onPress={() => { setLiveTripName(''); setShowStartLiveTrip(true); }}>
-                <Text style={styles.tripFabText}>🔴 Go Live</Text>
-              </TouchableOpacity>
+              <View style={styles.liveActions}>
+                <TouchableOpacity
+                  style={styles.dropPinFab}
+                  onPress={() => {
+                    if (!userLocation) { Alert.alert('Location not available yet'); return; }
+                    setAddPinModal({ lat: userLocation.latitude, lon: userLocation.longitude });
+                    setPinLabel('');
+                    setPinNote('');
+                  }}
+                >
+                  <Text style={styles.tripFabText}>📍 Drop Here</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.tripFab} onPress={() => setShowTripPlanner(true)}>
+                  <Text style={styles.tripFabText}>✈️ Plan Trip</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.liveStartFab} onPress={() => { setLiveTripName(''); setShowStartLiveTrip(true); }}>
+                  <Text style={styles.tripFabText}>🔴 Go Live</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
@@ -837,39 +879,23 @@ export default function ExploreScreen() {
       <Modal visible={showDropPhotoPin} transparent animationType="slide">
         <View style={styles.pinOverlay}>
           <View style={styles.pinBox}>
-            <Text style={styles.pinTitle}>📸 Drop a Stop</Text>
-            {/* Photo picker */}
-            <TouchableOpacity
-              style={styles.photoPickerBtn}
-              onPress={async () => {
-                const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                if (!perm.granted) { Alert.alert('Permission needed to pick photos'); return; }
-                const result = await ImagePicker.launchImageLibraryAsync({
-                  mediaTypes: 'images',
-                  quality: 0.7,
-                  allowsEditing: true,
-                  aspect: [4, 3],
-                });
-                if (!result.canceled && result.assets[0]) {
-                  setPhotoPinUri(result.assets[0].uri);
-                }
-              }}
-            >
-              {photoPinUri ? (
-                <Image source={{ uri: photoPinUri }} style={styles.photoPickerPreview} resizeMode="cover" />
-              ) : (
-                <View style={styles.photoPickerEmpty}>
-                  <Text style={{ fontSize: 32 }}>📷</Text>
-                  <Text style={styles.photoPickerHint}>Tap to add a photo</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            <Text style={styles.pinTitle}>� Drop a Stop</Text>
+            {/* Photo preview (already picked before modal opened) */}
+            {photoPinUri ? (
+              <Image source={{ uri: photoPinUri }} style={styles.photoPickerPreview} resizeMode="cover" />
+            ) : (
+              <View style={[styles.photoPickerBtn, styles.photoPickerEmpty]}>
+                <Text style={{ fontSize: 28 }}>📍</Text>
+                <Text style={styles.photoPickerHint}>No photo — pin only</Text>
+              </View>
+            )}
             <TextInput
               style={[styles.pinInput, { marginTop: 10 }]}
               placeholder="Place name (e.g. Brandenburg Gate)"
               placeholderTextColor={theme.colors.textMuted}
               value={photoPinName}
               onChangeText={setPhotoPinName}
+              autoFocus
             />
             <TextInput
               style={[styles.pinInput, { marginTop: 8, minHeight: 60 }]}
@@ -897,6 +923,11 @@ export default function ExploreScreen() {
                     timestamp: Date.now(),
                   });
                   setShowDropPhotoPin(false);
+                  Alert.alert(
+                    '📍 Stop dropped!',
+                    `"${photoPinName.trim()}" has been added to your live trip.`,
+                    [{ text: 'Keep going!', style: 'default' }],
+                  );
                 }}
               >
                 <Text style={styles.pinSaveText}>📍 Drop Pin</Text>
@@ -905,6 +936,15 @@ export default function ExploreScreen() {
           </View>
         </View>
       </Modal>
+      {/* ═══ Live Trip Summary / End Sheet ═══ */}
+      {activeLiveTrip && summaryMode && (
+        <LiveTripSummarySheet
+          trip={activeLiveTrip}
+          mode={summaryMode}
+          onClose={() => setSummaryMode(null)}
+          onEnd={() => { endLiveTrip(); setSummaryMode(null); }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1225,6 +1265,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 8,
+    elevation: 8,
+  },
+  viewStopsFab: {
+    backgroundColor: '#374151',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 28,
     elevation: 8,
   },
   endTripFab: {
