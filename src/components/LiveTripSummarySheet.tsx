@@ -35,7 +35,7 @@ function buildStaticMapUrl(pins: LiveTrip['pins']): string {
   return `https://staticmap.openstreetmap.de/staticmap.php?center=${cLat.toFixed(4)},${cLon.toFixed(4)}&zoom=${zoom}&size=600x300&markers=${markers}`;
 }
 
-
+function pinsToRegion(pins: LiveTrip['pins']): LRegion {
   if (pins.length === 0) {
     return { latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 };
   }
