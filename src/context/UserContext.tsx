@@ -64,7 +64,7 @@ export type LiveTrip = {
   status: 'active' | 'paused';
 };
 
-export type CompletedLiveTrip = LiveTrip & { endedAt: number };
+export type CompletedLiveTrip = LiveTrip & { endedAt: number; source?: 'live' | 'manual' };
 
 export type TripStory = {
   id: string;
@@ -102,6 +102,7 @@ type UserContextType = {
   endLiveTrip: () => void;
   completedLiveTrips: CompletedLiveTrip[];
   deleteCompletedTrip: (id: string) => void;
+  addManualTrip: (trip: CompletedLiveTrip) => void;
 };
 
 const UserContext = createContext<UserContextType>({
@@ -128,6 +129,7 @@ const UserContext = createContext<UserContextType>({
   endLiveTrip: () => {},
   completedLiveTrips: [],
   deleteCompletedTrip: () => {},
+  addManualTrip: () => {},
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
@@ -250,6 +252,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const addManualTrip = (trip: CompletedLiveTrip) => {
+    setCompletedLiveTrips((prev) => {
+      const next = [trip, ...prev];
+      AsyncStorage.setItem('completedLiveTrips', JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
     <UserContext.Provider value={{
       user, setUser,
@@ -258,7 +268,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       mapPins, addMapPin, updateMapPin, deleteMapPin,
       tripStories, addTripStory,
       activeLiveTrip, startLiveTrip, addLiveTripPin, pauseLiveTrip, resumeLiveTrip, endLiveTrip,
-      completedLiveTrips, deleteCompletedTrip,
+      completedLiveTrips, deleteCompletedTrip, addManualTrip,
     }}>
       {children}
     </UserContext.Provider>

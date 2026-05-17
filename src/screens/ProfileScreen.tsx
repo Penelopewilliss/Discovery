@@ -23,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import LeafletMapView from '../components/LeafletMapView';
 import TripShareSheet from '../components/TripShareSheet';
 import LiveTripSummarySheet from '../components/LiveTripSummarySheet';
+import CreateTripModal from '../components/CreateTripModal';
 
 const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
@@ -81,6 +82,7 @@ const BADGE_COLORS = [
 export default function ProfileScreen() {
   const { user: loggedInUser, setUser, visitedPlaces, trips, deleteTrip, completedLiveTrips, deleteCompletedTrip } = useUser();
   const [reviewingTrip, setReviewingTrip] = useState<CompletedLiveTrip | null>(null);
+  const [showCreateTrip, setShowCreateTrip] = useState(false);
   const [sharingTrip, setSharingTrip] = useState<Trip | null>(null);
   const user = mockUser;
   const [privateProfile, setPrivateProfile] = useState(user.privateProfile);
@@ -417,6 +419,9 @@ export default function ProfileScreen() {
           {/* ═══ My Trips ═══ */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>🔴 My Trips</Text>
+            <TouchableOpacity onPress={() => setShowCreateTrip(true)} style={styles.addTripBtn}>
+              <Text style={styles.addTripBtnText}>+ Add Trip</Text>
+            </TouchableOpacity>
           </View>
           {completedLiveTrips.length === 0 ? (
             <GlassCard style={styles.tripsEmptyCard}>
@@ -910,6 +915,7 @@ export default function ProfileScreen() {
           onEnd={() => setReviewingTrip(null)}
         />
       )}
+      <CreateTripModal visible={showCreateTrip} onClose={() => setShowCreateTrip(false)} />
     </SafeAreaView>
   );
 }
@@ -1023,6 +1029,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: theme.spacing.sm,
+  },
+  addTripBtn: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  addTripBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   addCountryBtn: {
     backgroundColor: theme.colors.surface,
