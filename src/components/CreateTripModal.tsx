@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Modal,
   View,
@@ -12,15 +12,20 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../theme';
 import { useUser } from '../context/UserContext';
 import { LiveTripPin, CompletedLiveTrip, VisitedPlace } from '../context/UserContext';
+import { searchFsqPlaces, FsqPlace } from '../utils/foursquare';
 
 type ManualStop = {
   id: string;
   placeName: string;
+  country: string;
+  lat: number;
+  lon: number;
   photoUri?: string;
   note: string;
   timestamp: number;
@@ -52,16 +57,32 @@ export default function CreateTripModal({ visible, onClose }: Props) {
   const [showAddStop, setShowAddStop] = useState(false);
   const [editingStopId, setEditingStopId] = useState<string | null>(null);
   const [stopName, setStopName] = useState('');
+  const [stopCountry, setStopCountry] = useState('');
+  const [stopLat, setStopLat] = useState(0);
+  const [stopLon, setStopLon] = useState(0);
   const [stopNote, setStopNote] = useState('');
   const [stopPhoto, setStopPhoto] = useState<string | undefined>();
   const [stopAddToVisited, setStopAddToVisited] = useState(true);
 
+  // Place search state
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placeResults, setPlaceResults] = useState<FsqPlace[]>([]);
+  const [placeSearching, setPlaceSearching] = useState(false);
+  const [placeSelected, setPlaceSelected] = useState(false);
+  const searchAbort = useRef<AbortController | null>(null);
+
   const resetStopForm = () => {
     setStopName('');
+    setStopCountry('');
+    setStopLat(0);
+    setStopLon(0);
     setStopNote('');
     setStopPhoto(undefined);
     setStopAddToVisited(true);
     setEditingStopId(null);
+    setPlaceQuery('');
+    setPlaceResults([]);
+    setPlaceSelected(false);
   };
 
   const openAddStop = () => {
@@ -71,11 +92,50 @@ export default function CreateTripModal({ visible, onClose }: Props) {
 
   const openEditStop = (stop: ManualStop) => {
     setStopName(stop.placeName);
+    setStopCountry(stop.country);
+    setStopLat(stop.lat);
+    setStopLon(stop.lon);
     setStopNote(stop.note);
     setStopPhoto(stop.photoUri);
     setStopAddToVisited(stop.addToVisited);
     setEditingStopId(stop.id);
+    setPlaceQuery(stop.placeName);
+    setPlaceSelected(true);
+    setPlaceResults([]);
     setShowAddStop(true);
+  };
+
+  const handlePlaceSearch = async (q: string) => {
+    setPlaceQuery(q);
+    setPlaceSelected(false);
+    setStopName('');
+    setStopCountry('');
+    setStopLat(0);
+    setStopLon(0);
+    if (!q.trim() || q.length < 2) { setPlaceResults([]); return; }
+    searchAbort.current?.abort();
+    const ctrl = new AbortController();
+    searchAbort.current = ctrl;
+    setPlaceSearching(true);
+    try {
+      const results = await searchFsqPlaces(q, ctrl.signal);
+      setPlaceResults(results.slice(0, 8));
+    } catch (_) {}
+    finally { setPlaceSearching(false); }
+  };
+
+  const selectPlace = (place: FsqPlace) => {
+    const name = place.name;
+    const country = place.location?.country ?? '';
+    const lat = place.geocodes?.main?.latitude ?? 0;
+    const lon = place.geocodes?.main?.longitude ?? 0;
+    setStopName(name);
+    setStopCountry(country);
+    setStopLat(lat);
+    setStopLon(lon);
+    setPlaceQuery(`${name}${country ? ', ' + country : ''}`);
+    setPlaceSelected(true);
+    setPlaceResults([]);
   };
 
   const pickPhoto = async () => {
@@ -88,12 +148,15 @@ export default function CreateTripModal({ visible, onClose }: Props) {
 
   const confirmStop = () => {
     if (!stopName.trim()) {
-      Alert.alert('Place name required', 'Enter the name of this stop.');
+      Alert.alert('Place required', 'Search for and select a place before adding this stop.');
       return;
     }
     const stop: ManualStop = {
       id: editingStopId ?? `stop_${Date.now()}`,
       placeName: stopName.trim(),
+      country: stopCountry,
+      lat: stopLat,
+      lon: stopLon,
       photoUri: stopPhoto,
       note: stopNote.trim(),
       timestamp: Date.now(),
@@ -129,8 +192,8 @@ export default function CreateTripModal({ visible, onClose }: Props) {
 
     const pins: LiveTripPin[] = stops.map((s) => ({
       id: s.id,
-      latitude: 0,
-      longitude: 0,
+      latitude: s.lat,
+      longitude: s.lon,
       photoUri: s.photoUri,
       note: s.note,
       placeName: s.placeName,
@@ -158,9 +221,9 @@ export default function CreateTripModal({ visible, onClose }: Props) {
         const vp: VisitedPlace = {
           id: s.id,
           name: s.placeName,
-          country: '',
-          lat: 0,
-          lon: 0,
+          country: s.country,
+          lat: s.lat,
+          lon: s.lon,
           coverImage: s.photoUri ?? '',
           visitedAt: new Date(s.timestamp).toLocaleDateString(),
         };
@@ -321,14 +384,39 @@ export default function CreateTripModal({ visible, onClose }: Props) {
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
               <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-                <Text style={styles.label}>Place Name *</Text>
+                <Text style={styles.label}>Search for a Place *</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. Alfama, Lisbon"
+                  placeholder="e.g. Lisbon, Alfama, Bali..."
                   placeholderTextColor={theme.colors.textMuted}
-                  value={stopName}
-                  onChangeText={setStopName}
+                  value={placeQuery}
+                  onChangeText={handlePlaceSearch}
+                  autoCorrect={false}
                 />
+                {placeSearching && (
+                  <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginVertical: 8 }} />
+                )}
+                {placeResults.length > 0 && (
+                  <View style={styles.placeResultsList}>
+                    {placeResults.map((p) => (
+                      <TouchableOpacity
+                        key={p.fsq_id}
+                        style={styles.placeResultItem}
+                        onPress={() => selectPlace(p)}
+                      >
+                        <Text style={styles.placeResultName}>{p.name}</Text>
+                        {p.location?.country ? (
+                          <Text style={styles.placeResultCountry}>{p.location.country}</Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {placeSelected && stopName ? (
+                  <View style={styles.placeSelectedBadge}>
+                    <Text style={styles.placeSelectedText}>📍 {stopName}{stopCountry ? `, ${stopCountry}` : ''}</Text>
+                  </View>
+                ) : null}
 
                 <Text style={styles.label}>Photo</Text>
                 <TouchableOpacity style={styles.photoPickerBtn} onPress={pickPhoto}>
@@ -638,4 +726,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
+  placeResultsList: {
+    backgroundColor: theme.colors.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginTop: 4,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  placeResultItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  placeResultName: {
+    color: theme.colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  placeResultCountry: {
+    color: theme.colors.textSecondary,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  placeSelectedBadge: {
+    backgroundColor: theme.colors.primary + '22',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  placeSelectedText: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+    fontSize: 14,
+  },
 });
+

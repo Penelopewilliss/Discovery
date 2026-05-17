@@ -1,14 +1,15 @@
 /**
  * Destinations service.
  * Uses Google Places API (New) when EXPO_PUBLIC_GOOGLE_PLACES_KEY is set.
- * Falls back to Wikipedia (photos/tips) + OpenStreetMap Nominatim (search) — free, no key needed.
+ * Falls back to Photon (komoot, built on OSM) → Nominatim — free, no key needed.
  */
 
-const KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
-const GBASE = 'https://places.googleapis.com/v1';
-const WIKI  = 'https://en.wikipedia.org/w/api.php';
-const NOM   = 'https://nominatim.openstreetmap.org/search';
-const UA    = 'DiscoveryApp/1.0';
+const KEY    = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
+const GBASE  = 'https://places.googleapis.com/v1';
+const WIKI   = 'https://en.wikipedia.org/w/api.php';
+const NOM    = 'https://nominatim.openstreetmap.org/search';
+const PHOTON = 'https://photon.komoot.io/api';
+const UA     = 'DiscoveryApp/1.0';
 
 export const FEATURED_DESTINATIONS = [
   { wiki: 'Paris',          name: 'Paris',          country: 'France',         lat: 48.8566,  lon:   2.3522 },
@@ -193,7 +194,7 @@ export async function getFeaturedPlaces(): Promise<FsqPlaceWithPhoto[]> {
 }
 
 export async function searchFsqPlaces(query: string, signal?: AbortSignal): Promise<FsqPlace[]> {
-  // Try Google Places
+  // 1. Try Google Places (when key is available)
   const gPlaces = await googleSearch(`${query} travel destination`, 20, signal);
   if (gPlaces.length > 0) {
     return gPlaces.map((p) => {
@@ -212,27 +213,61 @@ export async function searchFsqPlaces(query: string, signal?: AbortSignal): Prom
     });
   }
 
-  // Fall back to Nominatim (OpenStreetMap) — always free
-  // Classes that represent real travel destinations
-  const GOOD_CLASSES = new Set([
-    'place', 'boundary', 'aeroway', 'tourism', 'natural',
-    'historic', 'amenity', 'leisure', 'landuse',
-  ]);
-  // Types that are noise (streets, paths, individual buildings)
-  const SKIP_TYPES = new Set([
-    'path', 'track', 'service', 'residential', 'motorway', 'primary',
-    'secondary', 'tertiary', 'trunk', 'unclassified', 'footway', 'cycleway',
-    'house', 'building', 'yes', 'pedestrian', 'living_street',
-  ]);
+  // 2. Photon (komoot) — full OpenStreetMap data, every place type, worldwide, no key
+  try {
+    const params = new URLSearchParams({ q: query, limit: '15', lang: 'en' });
+    const r = await fetch(`${PHOTON}?${params}`, {
+      headers: { 'User-Agent': UA },
+      signal,
+    });
+    if (r.ok) {
+      const json = await r.json();
+      const features: any[] = json.features ?? [];
+      // Filter out pure street/road results
+      const SKIP_OSM_VALUES = new Set([
+        'residential', 'unclassified', 'tertiary', 'secondary', 'primary',
+        'trunk', 'motorway', 'path', 'footway', 'cycleway', 'track', 'service',
+        'house', 'building',
+      ]);
+      const results: FsqPlace[] = features
+        .filter((f: any) => {
+          const props = f.properties ?? {};
+          const osmValue: string = props.osm_value ?? '';
+          if (SKIP_OSM_VALUES.has(osmValue)) return false;
+          // Must have a name
+          if (!props.name && !props.city && !props.locality) return false;
+          return true;
+        })
+        .map((f: any) => {
+          const props = f.properties ?? {};
+          const [lon, lat] = f.geometry?.coordinates ?? [0, 0];
+          const name = props.name || props.city || props.locality || props.county || props.state || '';
+          const country = props.country ?? '';
+          const locality = props.city || props.locality || props.county || '';
+          return {
+            fsq_id: `photon_${props.osm_id ?? Math.random()}`,
+            name,
+            location: { country, locality },
+            geocodes: { main: { latitude: lat, longitude: lon } },
+            stats: { total_ratings: 1000 },
+          };
+        })
+        .filter((p) => p.name.length > 0);
 
+      if (results.length > 0) return results;
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return [];
+  }
+
+  // 3. Nominatim fallback (OpenStreetMap) — less strict filtering
   try {
     const params = new URLSearchParams({
       q: query,
       format: 'json',
-      limit: '30',
+      limit: '20',
       addressdetails: '1',
       namedetails: '1',
-      extratags: '1',
     });
     const r = await fetch(`${NOM}?${params}`, {
       headers: { 'User-Agent': UA, 'Accept-Language': 'en' },
@@ -240,17 +275,13 @@ export async function searchFsqPlaces(query: string, signal?: AbortSignal): Prom
     });
     if (!r.ok) return [];
     const data: any[] = await r.json();
-
+    const SKIP_TYPES = new Set([
+      'path', 'track', 'service', 'residential', 'motorway', 'primary',
+      'secondary', 'tertiary', 'trunk', 'unclassified', 'footway', 'cycleway',
+      'house', 'building', 'yes', 'pedestrian', 'living_street',
+    ]);
     return data
-      .filter((item: any) => {
-        // Skip very low importance results (noise)
-        if (typeof item.importance === 'number' && item.importance < 0.15) return false;
-        // Skip non-travel types
-        if (SKIP_TYPES.has(item.type)) return false;
-        // Must have a real name
-        if (!item.name && !item.namedetails?.name) return false;
-        return true;
-      })
+      .filter((item: any) => !SKIP_TYPES.has(item.type) && (item.name || item.namedetails?.name))
       .sort((a: any, b: any) => (b.importance ?? 0) - (a.importance ?? 0))
       .slice(0, 12)
       .map((item: any) => {
@@ -260,7 +291,7 @@ export async function searchFsqPlaces(query: string, signal?: AbortSignal): Prom
         return {
           fsq_id: String(item.place_id),
           name,
-          location: { country, locality: item.address?.city || item.address?.town || item.address?.village || displayParts[0] },
+          location: { country, locality: item.address?.city || item.address?.town || item.address?.village || '' },
           geocodes: { main: { latitude: parseFloat(item.lat), longitude: parseFloat(item.lon) } },
           stats: { total_ratings: Math.round((item.importance ?? 0.1) * 100000) },
         };

@@ -28,8 +28,11 @@ import CreateTripModal from '../components/CreateTripModal';
 const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
 import { mockUser, mockStamps, mockPosts, mockFollowers, mockFollowing } from '../data/mockData';
+import { auth } from '../firebase';
+import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 import GlassCard from '../components/GlassCard';
 import { useUser, Trip, CompletedLiveTrip } from '../context/UserContext';
+import { useNavigation } from '@react-navigation/native';
 import { PostDelay } from '../types';
 
 const ALL_COUNTRIES: { name: string; emoji: string }[] = [
@@ -81,6 +84,7 @@ const BADGE_COLORS = [
 
 export default function ProfileScreen() {
   const { user: loggedInUser, setUser, visitedPlaces, trips, deleteTrip, completedLiveTrips, deleteCompletedTrip } = useUser();
+  const navigation = useNavigation();
   const [reviewingTrip, setReviewingTrip] = useState<CompletedLiveTrip | null>(null);
   const [showCreateTrip, setShowCreateTrip] = useState(false);
   const [sharingTrip, setSharingTrip] = useState<Trip | null>(null);
@@ -94,6 +98,43 @@ export default function ProfileScreen() {
   const [selectedSavedPost, setSelectedSavedPost] = useState<typeof savedPosts[0] | null>(null);
   const [showTravelMap, setShowTravelMap] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+
+  const handleLogout = () => {
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log Out', style: 'destructive', onPress: async () => {
+          await signOut(auth);
+          setUser(null);
+        },
+      },
+    ]);
+  };
+
+  const handleForgotPassword = () => {
+    const email = loggedInUser?.email;
+    if (!email) {
+      Alert.alert('No email', 'No email address found for your account.');
+      return;
+    }
+    Alert.alert(
+      'Reset Password',
+      `Send a password reset link to ${email}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send', onPress: async () => {
+            try {
+              await sendPasswordResetEmail(auth, email);
+              Alert.alert('Email sent', `Check ${email} for a reset link.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Edit profile
   const [showEdit, setShowEdit] = useState(false);
@@ -680,6 +721,25 @@ export default function ProfileScreen() {
               </View>
             )}
           </GlassCard>
+
+          {/* Account actions */}
+          <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>⚙️ Account</Text>
+          <GlassCard style={styles.privacyCard}>
+            <TouchableOpacity style={styles.privacyRow} onPress={handleForgotPassword}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyLabel}>Reset Password</Text>
+                <Text style={styles.privacySub}>Send a reset link to your email</Text>
+              </View>
+              <Text style={{ color: theme.colors.textSecondary }}>›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.privacyRow, styles.borderTop]} onPress={handleLogout}>
+              <View style={styles.privacyInfo}>
+                <Text style={[styles.privacyLabel, { color: '#ef4444' }]}>Log Out</Text>
+              </View>
+              <Text style={{ color: '#ef4444' }}>›</Text>
+            </TouchableOpacity>
+          </GlassCard>
+
         </View>
 
         <View style={{ height: theme.spacing.xxl }} />
