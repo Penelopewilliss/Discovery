@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
+import LeafletMapView from '../components/LeafletMapView';
 
 const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
@@ -706,40 +706,25 @@ export default function ProfileScreen() {
               </Text>
             </View>
           ) : (
-            <MapView
+            <LeafletMapView
               style={{ flex: 1, width: SCREEN.width }}
-              mapType="none"
-              initialRegion={{
+              region={{
                 latitude: visitedPlaces[0].lat,
                 longitude: visitedPlaces[0].lon,
                 latitudeDelta: 60,
                 longitudeDelta: 80,
               }}
-              showsUserLocation={false}
-            >
-              <UrlTile
-                urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                maximumZ={19}
-                flipY={false}
-              />
-              {visitedPlaces.map((place, i) => (
-                <Marker
-                  key={place.id}
-                  coordinate={{ latitude: place.lat, longitude: place.lon }}
-                  title={place.name}
-                  description={`${place.country} · Stop #${i + 1}`}
-                  pinColor="#22c55e"
-                />
-              ))}
-              {visitedPlaces.length > 1 && (
-                <Polyline
-                  coordinates={visitedPlaces.map((p) => ({ latitude: p.lat, longitude: p.lon }))}
-                  strokeColor={theme.colors.primary}
-                  strokeWidth={2.5}
-                  lineDashPattern={[8, 4]}
-                />
-              )}
-            </MapView>
+              markers={visitedPlaces.map((place, i) => ({
+                id: place.id,
+                latitude: place.lat,
+                longitude: place.lon,
+                color: '#22c55e',
+                label: place.name,
+                sublabel: `${place.country} · Stop #${i + 1}`,
+              }))}
+              polylineCoords={visitedPlaces.map((p) => ({ latitude: p.lat, longitude: p.lon }))}
+              polylineColor={theme.colors.primary}
+            />
           )}
 
           {/* Bottom strip — journey list */}
@@ -794,38 +779,24 @@ export default function ProfileScreen() {
 
             {/* Map with route */}
             <View style={{ height: 300 }}>
-              <MapView
+              <LeafletMapView
                 style={{ flex: 1 }}
-                mapType="none"
                 region={{
                   latitude: selectedTrip.stops[0]?.lat ?? 20,
                   longitude: selectedTrip.stops[0]?.lon ?? 10,
                   latitudeDelta: 60,
                   longitudeDelta: 70,
                 }}
-              >
-                <UrlTile
-                  urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  maximumZ={19}
-                  flipY={false}
-                />
-                {selectedTrip.stops.map((stop, i) => (
-                  <Marker
-                    key={i}
-                    coordinate={{ latitude: stop.lat, longitude: stop.lon }}
-                    title={`${i + 1}. ${stop.name}`}
-                    pinColor="#6366f1"
-                  />
-                ))}
-                {selectedTrip.stops.length > 1 && (
-                  <Polyline
-                    coordinates={selectedTrip.stops.map((s) => ({ latitude: s.lat, longitude: s.lon }))}
-                    strokeColor={theme.colors.primary}
-                    strokeWidth={3}
-                    lineDashPattern={[8, 4]}
-                  />
-                )}
-              </MapView>
+                markers={selectedTrip.stops.map((stop, i) => ({
+                  id: String(i),
+                  latitude: stop.lat,
+                  longitude: stop.lon,
+                  color: '#6366f1',
+                  label: `${i + 1}. ${stop.name}`,
+                }))}
+                polylineCoords={selectedTrip.stops.map((s) => ({ latitude: s.lat, longitude: s.lon }))}
+                polylineColor={theme.colors.primary}
+              />
             </View>
 
             {/* Stop list */}

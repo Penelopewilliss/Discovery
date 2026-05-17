@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type LoggedInUser = {
   name: string;
@@ -34,6 +35,15 @@ export type Trip = {
   createdAt: string;
 };
 
+export type MapPin = {
+  id: string;
+  lat: number;
+  lon: number;
+  label: string;
+  note: string;
+  createdAt: string;
+};
+
 type UserContextType = {
   user: LoggedInUser | null;
   setUser: (u: LoggedInUser) => void;
@@ -44,6 +54,10 @@ type UserContextType = {
   trips: Trip[];
   createTrip: (trip: Trip) => void;
   deleteTrip: (id: string) => void;
+  mapPins: MapPin[];
+  addMapPin: (pin: MapPin) => void;
+  updateMapPin: (id: string, label: string, note: string) => void;
+  deleteMapPin: (id: string) => void;
 };
 
 const UserContext = createContext<UserContextType>({
@@ -56,12 +70,29 @@ const UserContext = createContext<UserContextType>({
   trips: [],
   createTrip: () => {},
   deleteTrip: () => {},
+  mapPins: [],
+  addMapPin: () => {},
+  updateMapPin: () => {},
+  deleteMapPin: () => {},
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<LoggedInUser | null>(null);
   const [visitedPlaces, setVisitedPlaces] = useState<VisitedPlace[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [mapPins, setMapPins] = useState<MapPin[]>([]);
+
+  // Load persisted map pins on mount
+  useEffect(() => {
+    AsyncStorage.getItem('mapPins').then((raw) => {
+      if (raw) setMapPins(JSON.parse(raw));
+    });
+  }, []);
+
+  const savePins = (pins: MapPin[]) => {
+    setMapPins(pins);
+    AsyncStorage.setItem('mapPins', JSON.stringify(pins));
+  };
 
   const markVisited = (place: VisitedPlace) => {
     setVisitedPlaces((prev) =>
@@ -78,8 +109,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const createTrip = (trip: Trip) => setTrips((prev) => [trip, ...prev]);
   const deleteTrip = (id: string) => setTrips((prev) => prev.filter((t) => t.id !== id));
 
+  const addMapPin = (pin: MapPin) => savePins([...mapPins, pin]);
+  const updateMapPin = (id: string, label: string, note: string) =>
+    savePins(mapPins.map((p) => (p.id === id ? { ...p, label, note } : p)));
+  const deleteMapPin = (id: string) => savePins(mapPins.filter((p) => p.id !== id));
+
   return (
-    <UserContext.Provider value={{ user, setUser, visitedPlaces, markVisited, removeVisited, isVisited, trips, createTrip, deleteTrip }}>
+    <UserContext.Provider value={{
+      user, setUser,
+      visitedPlaces, markVisited, removeVisited, isVisited,
+      trips, createTrip, deleteTrip,
+      mapPins, addMapPin, updateMapPin, deleteMapPin,
+    }}>
       {children}
     </UserContext.Provider>
   );

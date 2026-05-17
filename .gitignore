@@ -1,2 +1,8 @@
 node_modules
 .env
+
+# Expo prebuild output (generated — do not commit)
+android/
+ios/
+.expo/
+

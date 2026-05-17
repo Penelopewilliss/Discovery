@@ -16,21 +16,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#0A0A0F"
       },
-      "package": "com.travlora.app",
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyBEuS4rfaYqrQ2Tz_WNMQ5CwXX2NECeZnk"
-        }
-      }
-    },
-    "plugins": [
-      "expo-video",
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow Discovery to use your location to show you nearby destinations."
-        }
-      ]
-    ]
+      "package": "com.travlora.app"
+    }
   }
 }

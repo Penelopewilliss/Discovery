@@ -15,13 +15,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Callout, Polyline, UrlTile } from 'react-native-maps';
+import LeafletMapView, { LeafletMapRef } from '../components/LeafletMapView';
 
 const SCREEN = Dimensions.get('window');
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { Place } from '../types';
-import { useUser, VisitedPlace, TripStop, Trip } from '../context/UserContext';
+import { useUser, VisitedPlace, TripStop, Trip, MapPin } from '../context/UserContext';
 import PlaceCard from '../components/PlaceCard';
 import GlassCard from '../components/GlassCard';
 import { PlaceCardSkeleton } from '../components/SkeletonLoader';
@@ -51,7 +51,9 @@ function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
 }
 
 export default function ExploreScreen() {
-  const { isVisited, markVisited, removeVisited, createTrip } = useUser();
+  const { isVisited, markVisited, removeVisited, createTrip, mapPins, addMapPin, updateMapPin, deleteMapPin } = useUser();
+  const mapRef = useRef<LeafletMapRef>(null);
+  const locationSub = useRef<Location.LocationSubscription | null>(null);
   const [query, setQuery] = useState('');
   const [tick, setTick] = useState(0);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -76,10 +78,15 @@ export default function ExploreScreen() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapContainerHeight, setMapContainerHeight] = useState(0);
+  // Custom map pin modals
+  const [addPinModal, setAddPinModal] = useState<{ lat: number; lon: number } | null>(null);
+  const [editPinModal, setEditPinModal] = useState<MapPin | null>(null);
+  const [pinLabel, setPinLabel] = useState('');
+  const [pinNote, setPinNote] = useState('');
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
   const searchAbortRef = useRef<AbortController>();
 
-  // Load featured destinations and request GPS on mount
+  // Load featured destinations and start live GPS tracking on mount
   useEffect(() => {
     getFeaturedPlaces().then((results: FsqPlaceWithPhoto[]) => {
       setFeatured(results.map((r) => fsqToPlace(r, r.photoUrl)));
@@ -90,8 +97,18 @@ export default function ExploreScreen() {
       if (status === 'granted') {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        // Live tracking — update blue dot without remounting the map
+        locationSub.current = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
+          (l) => {
+            const coord = { latitude: l.coords.latitude, longitude: l.coords.longitude };
+            setUserLocation(coord);
+            mapRef.current?.updateUserLocation(coord.latitude, coord.longitude);
+          },
+        );
       }
     })();
+    return () => { locationSub.current?.remove(); };
   }, []);
 
   // Debounced search
@@ -346,68 +363,77 @@ export default function ExploreScreen() {
           onLayout={(e) => setMapContainerHeight(e.nativeEvent.layout.height)}
         >
           {mapContainerHeight > 0 && (
-          <MapView
+          <LeafletMapView
+            ref={mapRef}
             style={{ width: SCREEN.width, height: mapContainerHeight }}
-            mapType="none"
-            showsUserLocation={userLocation !== null}
-            showsMyLocationButton
-            initialRegion={
+            region={
               userLocation
                 ? { latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 30, longitudeDelta: 40 }
                 : { latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 }
             }
-          >
-            <UrlTile
-              urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-              maximumZ={19}
-              flipY={false}
-            />
-            {/* Featured destination pins */}
-            {featured.filter((p) => p.lat && p.lon).map((place) => {
-              const visited = isVisited(place.id);
-              return (
-                <Marker
-                  key={place.id}
-                  coordinate={{ latitude: place.lat!, longitude: place.lon! }}
-                  onPress={() => handleSelectPlace(place)}
-                >
-                  <View style={styles.mapPin}>
-                    <LinearGradient
-                      colors={visited ? ['#22c55e', '#16a34a'] : [theme.colors.primary, theme.colors.accent]}
-                      style={styles.mapPinInner}
-                    >
-                      <Text style={styles.mapPinEmoji}>{visited ? '✅' : '📍'}</Text>
-                    </LinearGradient>
-                  </View>
-                  <Callout onPress={() => handleSelectPlace(place)} style={styles.callout}>
-                    <Text style={styles.calloutTitle}>{place.name}</Text>
-                    <Text style={styles.calloutSub}>{place.country}{visited ? ' · Visited ✅' : ''}</Text>
-                  </Callout>
-                </Marker>
-              );
-            })}
-
-            {/* Search result pins — any place in the world */}
-            {query.trim() ? searchResults.filter((p) => p.lat && p.lon).map((place) => (
-              <Marker
-                key={`sr-${place.id}`}
-                coordinate={{ latitude: place.lat!, longitude: place.lon! }}
-                pinColor="#3b82f6"
-                onPress={() => handleSelectPlace(place)}
-              >
-                <Callout style={styles.callout}>
-                  <Text style={styles.calloutTitle}>{place.name}</Text>
-                  <Text style={styles.calloutSub}>{place.country}</Text>
-                </Callout>
-              </Marker>
-            )) : null}
-          </MapView>
+            userLocation={userLocation}
+            markers={[
+              ...featured.filter((p) => p.lat && p.lon).map((place) => ({
+                id: place.id,
+                latitude: place.lat!,
+                longitude: place.lon!,
+                color: isVisited(place.id) ? '#22c55e' : '#6366f1',
+                label: place.name,
+                sublabel: place.country + (isVisited(place.id) ? ' · Visited ✅' : ''),
+              })),
+              ...(query.trim()
+                ? searchResults.filter((p) => p.lat && p.lon).map((place) => ({
+                    id: place.id,
+                    latitude: place.lat!,
+                    longitude: place.lon!,
+                    color: '#3b82f6',
+                    label: place.name,
+                    sublabel: place.country,
+                  }))
+                : []),
+              ...mapPins.map((pin) => ({
+                id: pin.id,
+                latitude: pin.lat,
+                longitude: pin.lon,
+                color: '#f59e0b',
+                label: pin.label,
+                sublabel: pin.note || undefined,
+              })),
+            ]}
+            onMarkerPress={(id) => {
+              if (id.startsWith('pin_')) {
+                const pin = mapPins.find((p) => p.id === id);
+                if (pin) { setEditPinModal(pin); setPinLabel(pin.label); setPinNote(pin.note); }
+                return;
+              }
+              const place = [...featured, ...searchResults].find((p) => p.id === id);
+              if (place) handleSelectPlace(place);
+            }}
+            onMapPress={(lat, lng) => {
+              setAddPinModal({ lat, lon: lng });
+              setPinLabel('');
+              setPinNote('');
+            }}
+          />
           )}
 
-          {/* Plan Trip floating button */}
-          <TouchableOpacity style={styles.tripFab} onPress={() => setShowTripPlanner(true)}>
-            <Text style={styles.tripFabText}>✈️ Plan Trip</Text>
-          </TouchableOpacity>
+          {/* FABs */}
+          <View style={styles.fabRow}>
+            <TouchableOpacity
+              style={styles.dropPinFab}
+              onPress={() => {
+                if (!userLocation) { Alert.alert('Location not available yet'); return; }
+                setAddPinModal({ lat: userLocation.latitude, lon: userLocation.longitude });
+                setPinLabel('');
+                setPinNote('');
+              }}
+            >
+              <Text style={styles.tripFabText}>📍 Drop Here</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.tripFab} onPress={() => setShowTripPlanner(true)}>
+              <Text style={styles.tripFabText}>✈️ Plan Trip</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -526,38 +552,24 @@ export default function ExploreScreen() {
           {/* Live map preview — shown once stops are added */}
           {tripStops.length > 0 && (
             <View style={{ height: 200 }}>
-              <MapView
+              <LeafletMapView
                 style={{ flex: 1, width: SCREEN.width }}
-                mapType="none"
                 region={{
                   latitude: tripStops[tripStops.length - 1].lat,
                   longitude: tripStops[tripStops.length - 1].lon,
                   latitudeDelta: 50,
                   longitudeDelta: 60,
                 }}
-              >
-                <UrlTile
-                  urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  maximumZ={19}
-                  flipY={false}
-                />
-                {tripStops.map((stop, i) => (
-                  <Marker
-                    key={i}
-                    coordinate={{ latitude: stop.lat, longitude: stop.lon }}
-                    title={`${i + 1}. ${stop.name}`}
-                    pinColor="#6366f1"
-                  />
-                ))}
-                {tripStops.length > 1 && (
-                  <Polyline
-                    coordinates={tripStops.map((s) => ({ latitude: s.lat, longitude: s.lon }))}
-                    strokeColor={theme.colors.primary}
-                    strokeWidth={2.5}
-                    lineDashPattern={[6, 3]}
-                  />
-                )}
-              </MapView>
+                markers={tripStops.map((stop, i) => ({
+                  id: String(i),
+                  latitude: stop.lat,
+                  longitude: stop.lon,
+                  color: '#6366f1',
+                  label: `${i + 1}. ${stop.name}`,
+                }))}
+                polylineCoords={tripStops.map((s) => ({ latitude: s.lat, longitude: s.lon }))}
+                polylineColor={theme.colors.primary}
+              />
             </View>
           )}
 
@@ -619,6 +631,95 @@ export default function ExploreScreen() {
             )}
             <View style={{ height: 40 }} />
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ═══ Add Pin Modal ═══ */}
+      <Modal visible={addPinModal !== null} transparent animationType="fade">
+        <View style={styles.pinOverlay}>
+          <View style={styles.pinBox}>
+            <Text style={styles.pinTitle}>📍 New Pin</Text>
+            <TextInput
+              style={styles.pinInput}
+              placeholder="Label (e.g. Hidden beach)"
+              placeholderTextColor={theme.colors.textMuted}
+              value={pinLabel}
+              onChangeText={setPinLabel}
+              autoFocus
+            />
+            <TextInput
+              style={[styles.pinInput, { marginTop: 8, minHeight: 60 }]}
+              placeholder="Note (optional)"
+              placeholderTextColor={theme.colors.textMuted}
+              value={pinNote}
+              onChangeText={setPinNote}
+              multiline
+            />
+            <View style={styles.pinActions}>
+              <TouchableOpacity style={styles.pinCancel} onPress={() => setAddPinModal(null)}>
+                <Text style={styles.pinCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pinSave}
+                onPress={() => {
+                  if (!pinLabel.trim()) { Alert.alert('Add a label first'); return; }
+                  addMapPin({
+                    id: `pin_${Date.now()}`,
+                    lat: addPinModal!.lat,
+                    lon: addPinModal!.lon,
+                    label: pinLabel.trim(),
+                    note: pinNote.trim(),
+                    createdAt: new Date().toISOString(),
+                  });
+                  setAddPinModal(null);
+                }}
+              >
+                <Text style={styles.pinSaveText}>Save Pin</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ═══ Edit Pin Modal ═══ */}
+      <Modal visible={editPinModal !== null} transparent animationType="fade">
+        <View style={styles.pinOverlay}>
+          <View style={styles.pinBox}>
+            <Text style={styles.pinTitle}>✏️ Edit Pin</Text>
+            <TextInput
+              style={styles.pinInput}
+              placeholder="Label"
+              placeholderTextColor={theme.colors.textMuted}
+              value={pinLabel}
+              onChangeText={setPinLabel}
+            />
+            <TextInput
+              style={[styles.pinInput, { marginTop: 8, minHeight: 60 }]}
+              placeholder="Note (optional)"
+              placeholderTextColor={theme.colors.textMuted}
+              value={pinNote}
+              onChangeText={setPinNote}
+              multiline
+            />
+            <View style={styles.pinActions}>
+              <TouchableOpacity
+                style={styles.pinDelete}
+                onPress={() => { deleteMapPin(editPinModal!.id); setEditPinModal(null); }}
+              >
+                <Text style={styles.pinDeleteText}>🗑️ Delete</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pinSave}
+                onPress={() => {
+                  if (!pinLabel.trim()) { Alert.alert('Add a label first'); return; }
+                  updateMapPin(editPinModal!.id, pinLabel.trim(), pinNote.trim());
+                  setEditPinModal(null);
+                }}
+              >
+                <Text style={styles.pinSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -892,9 +993,6 @@ const styles = StyleSheet.create({
   },
   // Trip FAB
   tripFab: {
-    position: 'absolute',
-    bottom: 28,
-    right: 16,
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 13,
@@ -906,6 +1004,87 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   tripFabText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  fabRow: {
+    position: 'absolute',
+    bottom: 24,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+  },
+  dropPinFab: {
+    backgroundColor: '#f59e0b',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  // Pin modals
+  pinOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  pinBox: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+  },
+  pinTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  pinInput: {
+    backgroundColor: theme.colors.background,
+    color: theme.colors.text,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    textAlignVertical: 'top',
+  },
+  pinActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 16,
+  },
+  pinCancel: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  pinCancelText: { color: theme.colors.textMuted, fontWeight: '600' },
+  pinSave: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  pinSaveText: { color: '#fff', fontWeight: '700' },
+  pinDelete: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  pinDeleteText: { color: '#ef4444', fontWeight: '600' },
   // Trip Planner Modal
   tripModal: {
     flex: 1,
