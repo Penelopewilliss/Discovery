@@ -22,12 +22,13 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LeafletMapView from '../components/LeafletMapView';
 import TripShareSheet from '../components/TripShareSheet';
+import LiveTripSummarySheet from '../components/LiveTripSummarySheet';
 
 const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
 import { mockUser, mockStamps, mockPosts, mockFollowers, mockFollowing } from '../data/mockData';
 import GlassCard from '../components/GlassCard';
-import { useUser, Trip } from '../context/UserContext';
+import { useUser, Trip, CompletedLiveTrip } from '../context/UserContext';
 import { PostDelay } from '../types';
 
 const ALL_COUNTRIES: { name: string; emoji: string }[] = [
@@ -78,7 +79,8 @@ const BADGE_COLORS = [
 ];
 
 export default function ProfileScreen() {
-  const { user: loggedInUser, setUser, visitedPlaces, trips, deleteTrip } = useUser();
+  const { user: loggedInUser, setUser, visitedPlaces, trips, deleteTrip, completedLiveTrips, deleteCompletedTrip } = useUser();
+  const [reviewingTrip, setReviewingTrip] = useState<CompletedLiveTrip | null>(null);
   const [sharingTrip, setSharingTrip] = useState<Trip | null>(null);
   const user = mockUser;
   const [privateProfile, setPrivateProfile] = useState(user.privateProfile);
@@ -421,6 +423,83 @@ export default function ProfileScreen() {
               )}
             </GlassCard>
           </TouchableOpacity>
+
+          {/* ═══ Live Trip History ═══ */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>🔴 Live Trip History</Text>
+          </View>
+          {completedLiveTrips.length === 0 ? (
+            <GlassCard style={styles.tripsEmptyCard}>
+              <Text style={styles.tripsEmptyEmoji}>🗺️</Text>
+              <Text style={styles.tripsEmptyTitle}>No live trips yet</Text>
+              <Text style={styles.tripsEmptySub}>
+                Go to Explore → tap "🔴 Go Live" to start your first road trip.
+              </Text>
+            </GlassCard>
+          ) : (
+            completedLiveTrips.map((trip) => {
+              const durationMs = trip.endedAt - trip.startedAt;
+              const hours = Math.floor(durationMs / 3_600_000);
+              const mins = Math.floor((durationMs % 3_600_000) / 60_000);
+              const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+              const photos = trip.pins.filter((p) => p.photoUri);
+              const date = new Date(trip.endedAt).toLocaleDateString(undefined, {
+                day: 'numeric', month: 'short', year: 'numeric',
+              });
+              return (
+                <TouchableOpacity
+                  key={trip.id}
+                  activeOpacity={0.85}
+                  onPress={() => setReviewingTrip(trip)}
+                >
+                  <GlassCard style={styles.liveTripCard}>
+                    <View style={styles.liveTripCardHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.liveTripCardName}>{trip.name}</Text>
+                        <Text style={styles.liveTripCardMeta}>
+                          {date} · {trip.pins.length} stop{trip.pins.length !== 1 ? 's' : ''} · {durationStr} · {photos.length} photo{photos.length !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() =>
+                          Alert.alert('Delete trip?', `Remove "${trip.name}" from your history?`, [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Delete', style: 'destructive', onPress: () => deleteCompletedTrip(trip.id) },
+                          ])
+                        }
+                        style={styles.tripCardDelete}
+                      >
+                        <Text style={{ color: theme.colors.textMuted, fontSize: 18 }}>⋮</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {/* Photo thumbnail strip */}
+                    {photos.length > 0 && (
+                      <View style={styles.liveTripPhotoRow}>
+                        {photos.slice(0, 4).map((pin, i) => (
+                          <Image
+                            key={pin.id}
+                            source={{ uri: pin.photoUri! }}
+                            style={[styles.liveTripThumb, i > 0 && { marginLeft: 6 }]}
+                            resizeMode="cover"
+                          />
+                        ))}
+                        {photos.length > 4 && (
+                          <View style={[styles.liveTripThumb, styles.liveTripThumbMore, { marginLeft: 6 }]}>
+                            <Text style={styles.liveTripThumbMoreText}>+{photos.length - 4}</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                    {/* Stop names */}
+                    <Text style={styles.liveTripStops} numberOfLines={1}>
+                      {trip.pins.map((p) => p.placeName).join('  →  ')}
+                    </Text>
+                    <Text style={styles.liveTripTap}>Tap to view map + photos →</Text>
+                  </GlassCard>
+                </TouchableOpacity>
+              );
+            })
+          )}
 
           {/* My Trips — planned journeys */}
           <View style={styles.sectionHeaderRow}>
@@ -833,6 +912,14 @@ export default function ProfileScreen() {
           </View>
         )}
       </Modal>
+      {reviewingTrip && (
+        <LiveTripSummarySheet
+          trip={reviewingTrip}
+          mode="view"
+          onClose={() => setReviewingTrip(null)}
+          onEnd={() => setReviewingTrip(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1472,6 +1559,17 @@ const styles = StyleSheet.create({
   tripsEmptyEmoji: { fontSize: 48, marginBottom: theme.spacing.sm },
   tripsEmptyTitle: { color: theme.colors.text, fontWeight: '700', fontSize: 16, marginBottom: 6 },
   tripsEmptySub: { color: theme.colors.textMuted, fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  // Live trip history cards
+  liveTripCard: { marginBottom: theme.spacing.sm },
+  liveTripCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  liveTripCardName: { color: theme.colors.text, fontWeight: '700', fontSize: 16 },
+  liveTripCardMeta: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2 },
+  liveTripPhotoRow: { flexDirection: 'row', marginBottom: 8 },
+  liveTripThumb: { width: 60, height: 60, borderRadius: 10, overflow: 'hidden' as const },
+  liveTripThumbMore: { backgroundColor: theme.colors.background, alignItems: 'center' as const, justifyContent: 'center' as const },
+  liveTripThumbMoreText: { color: theme.colors.text, fontWeight: '700', fontSize: 13 },
+  liveTripStops: { color: theme.colors.textMuted, fontSize: 12, marginBottom: 6 },
+  liveTripTap: { color: theme.colors.accent, fontSize: 12, fontWeight: '600' },
   tripCard: { marginBottom: theme.spacing.sm },
   tripCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   tripCardName: { color: theme.colors.text, fontWeight: '700', fontSize: 16 },

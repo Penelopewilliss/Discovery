@@ -17,7 +17,25 @@ import LeafletMapView, { LMarker, LRegion } from './LeafletMapView';
 
 const STOP_COLORS = ['#6366f1', '#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ec4899', '#14b8a6'];
 
-function pinsToRegion(pins: LiveTrip['pins']): LRegion {
+function buildStaticMapUrl(pins: LiveTrip['pins']): string {
+  if (pins.length === 0) return '';
+  const lats = pins.map((p) => p.latitude);
+  const lons = pins.map((p) => p.longitude);
+  const cLat = lats.reduce((a, b) => a + b, 0) / lats.length;
+  const cLon = lons.reduce((a, b) => a + b, 0) / lons.length;
+  const spread = Math.max(
+    Math.max(...lats) - Math.min(...lats),
+    Math.max(...lons) - Math.min(...lons),
+  );
+  const zoom = spread < 2 ? 9 : spread < 10 ? 6 : spread < 30 ? 5 : spread < 80 ? 3 : 2;
+  const markers = pins
+    .slice(0, 10)
+    .map((p) => `${p.latitude.toFixed(4)},${p.longitude.toFixed(4)},red`)
+    .join('|');
+  return `https://staticmap.openstreetmap.de/staticmap.php?center=${cLat.toFixed(4)},${cLon.toFixed(4)}&zoom=${zoom}&size=600x300&markers=${markers}`;
+}
+
+
   if (pins.length === 0) {
     return { latitude: 20, longitude: 10, latitudeDelta: 80, longitudeDelta: 100 };
   }
@@ -71,11 +89,18 @@ export default function LiveTripSummarySheet({
   const withPhotos = trip.pins.filter((p) => p.photoUri);
 
   const shareToFeed = () => {
-    const mediaItems = withPhotos.map((p) => ({
+    const photoItems = withPhotos.map((p) => ({
       uri: p.photoUri!,
       type: 'photo' as const,
     }));
     const stopNames = trip.pins.map((p) => p.placeName);
+    const staticMapUrl = buildStaticMapUrl(trip.pins);
+
+    // Carousel: static map first, then each stop photo
+    const allMedia = [
+      ...(staticMapUrl ? [{ uri: staticMapUrl, type: 'photo' as const }] : []),
+      ...photoItems,
+    ];
 
     addPost({
       id: `live_trip_${Date.now()}`,
@@ -84,17 +109,15 @@ export default function LiveTripSummarySheet({
       userAvatar:
         userAvatar ??
         'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
-      // First photo as cover, or travel fallback
-      imageUrl:
-        mediaItems[0]?.uri ??
+      imageUrl: staticMapUrl || photoItems[0]?.uri ||
         'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&q=80',
-      mediaItems: mediaItems.length > 0 ? mediaItems : undefined,
+      mediaItems: allMedia.length > 0 ? allMedia : undefined,
       caption:
-        `\ud83d\udccd Live trip recap: ${trip.name}\n` +
-        stopNames.slice(0, 6).join(' \u2192 ') +
+        `📍 Live trip recap: ${trip.name}\n` +
+        stopNames.slice(0, 6).join(' → ') +
         (stopNames.length > 6 ? ` +${stopNames.length - 6} more` : ''),
       locationArea: stopNames[0] ?? 'On the road',
-      destination: stopNames.join(' \u2192 '),
+      destination: stopNames.join(' → '),
       tags: ['adventure'],
       mood: 'wanderlust',
       likes: 0,
@@ -115,14 +138,14 @@ export default function LiveTripSummarySheet({
         stops: stopNames,
         countries: [],
         stopCount: trip.pins.length,
-        mapIncluded: false,
+        mapIncluded: true,
       },
     });
 
     Alert.alert(
-      'Shared to feed! \ud83c\udf89',
-      `Your live trip "${trip.name}" with ${mediaItems.length} photo${mediaItems.length !== 1 ? 's' : ''} is now live.`,
-      [{ text: 'Great!', onPress: onEnd }],
+      '🎉 Shared to feed!',
+      `Your live trip "${trip.name}" is live with ${photoItems.length} photo${photoItems.length !== 1 ? 's' : ''} + route map.`,
+      [{ text: 'Awesome!', onPress: onEnd }],
     );
   };
 

@@ -63,6 +63,8 @@ export type LiveTrip = {
   status: 'active' | 'paused';
 };
 
+export type CompletedLiveTrip = LiveTrip & { endedAt: number };
+
 export type TripStory = {
   id: string;
   username: string;
@@ -97,6 +99,8 @@ type UserContextType = {
   pauseLiveTrip: () => void;
   resumeLiveTrip: () => void;
   endLiveTrip: () => void;
+  completedLiveTrips: CompletedLiveTrip[];
+  deleteCompletedTrip: (id: string) => void;
 };
 
 const UserContext = createContext<UserContextType>({
@@ -121,6 +125,8 @@ const UserContext = createContext<UserContextType>({
   pauseLiveTrip: () => {},
   resumeLiveTrip: () => {},
   endLiveTrip: () => {},
+  completedLiveTrips: [],
+  deleteCompletedTrip: () => {},
 });
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
@@ -130,6 +136,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [mapPins, setMapPins] = useState<MapPin[]>([]);
   const [tripStories, setTripStories] = useState<TripStory[]>([]);
   const [activeLiveTrip, setActiveLiveTrip] = useState<LiveTrip | null>(null);
+  const [completedLiveTrips, setCompletedLiveTrips] = useState<CompletedLiveTrip[]>([]);
 
   // Load persisted data on mount
   useEffect(() => {
@@ -138,6 +145,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
     AsyncStorage.getItem('activeLiveTrip').then((raw) => {
       if (raw) setActiveLiveTrip(JSON.parse(raw));
+    });
+    AsyncStorage.getItem('visitedPlaces').then((raw) => {
+      if (raw) setVisitedPlaces(JSON.parse(raw));
+    });
+    AsyncStorage.getItem('completedLiveTrips').then((raw) => {
+      if (raw) setCompletedLiveTrips(JSON.parse(raw));
     });
   }, []);
 
@@ -156,13 +169,20 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   };
 
   const markVisited = (place: VisitedPlace) => {
-    setVisitedPlaces((prev) =>
-      prev.find((p) => p.id === place.id) ? prev : [...prev, place]
-    );
+    setVisitedPlaces((prev) => {
+      if (prev.find((p) => p.id === place.id)) return prev;
+      const next = [...prev, place];
+      AsyncStorage.setItem('visitedPlaces', JSON.stringify(next));
+      return next;
+    });
   };
 
   const removeVisited = (id: string) => {
-    setVisitedPlaces((prev) => prev.filter((p) => p.id !== id));
+    setVisitedPlaces((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      AsyncStorage.setItem('visitedPlaces', JSON.stringify(next));
+      return next;
+    });
   };
 
   const isVisited = (id: string) => visitedPlaces.some((p) => p.id === id);
@@ -189,7 +209,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const resumeLiveTrip = () =>
     setActiveLiveTrip((prev) => prev ? { ...prev, status: 'active' } : prev);
 
-  const endLiveTrip = () => setActiveLiveTrip(null);
+  const endLiveTrip = () => {
+    setActiveLiveTrip((prev) => {
+      if (prev) {
+        const completed: CompletedLiveTrip = { ...prev, endedAt: Date.now() };
+        setCompletedLiveTrips((existing) => {
+          const next = [completed, ...existing];
+          AsyncStorage.setItem('completedLiveTrips', JSON.stringify(next));
+          return next;
+        });
+      }
+      return null;
+    });
+  };
+
+  const deleteCompletedTrip = (id: string) => {
+    setCompletedLiveTrips((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      AsyncStorage.setItem('completedLiveTrips', JSON.stringify(next));
+      return next;
+    });
+  };
 
   return (
     <UserContext.Provider value={{
@@ -199,6 +239,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       mapPins, addMapPin, updateMapPin, deleteMapPin,
       tripStories, addTripStory,
       activeLiveTrip, startLiveTrip, addLiveTripPin, pauseLiveTrip, resumeLiveTrip, endLiveTrip,
+      completedLiveTrips, deleteCompletedTrip,
     }}>
       {children}
     </UserContext.Provider>
