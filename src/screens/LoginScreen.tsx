@@ -14,7 +14,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import { theme } from '../theme';
 import { useUser } from '../context/UserContext';
 import { AuthStackParamList } from '../navigation/types';
@@ -25,35 +27,32 @@ export default function LoginScreen() {
 
   const onBack = () => navigation.goBack();
   const onSignUp = () => navigation.navigate('SignUp');
-  const onLogin = async (email: string) => {
-    try {
-      const stored = await AsyncStorage.getItem('@travlora_user');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.username?.includes('@')) {
-          parsed.username = parsed.username.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || 'traveler';
-        }
-        setUser(parsed);
-      } else {
-        setUser({ name: 'Traveler', username: 'traveler', email, avatarUri: null, bio: '', homeCountry: '', interests: [] });
-      }
-    } catch (_) {}
-  };
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Missing fields', 'Please enter your email and password.');
       return;
     }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const snap = await getDoc(doc(db, 'users', cred.user.uid));
+      if (snap.exists()) {
+        setUser(snap.data() as any);
+      }
+    } catch (e: any) {
+      const msg =
+        e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
+          ? 'Incorrect email or password.'
+          : e.message;
+      Alert.alert('Login failed', msg);
+    } finally {
       setLoading(false);
-      onLogin(email.trim());
-    }, 800);
+    }
   };
 
   return (

@@ -16,6 +16,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, setDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, db, storage } from '../firebase';
 import { theme } from '../theme';
 import { useUser } from '../context/UserContext';
 import { AuthStackParamList } from '../navigation/types';
@@ -41,17 +44,46 @@ export default function ProfileSetupScreen() {
   const { setUser } = useUser();
 
   const onComplete = async (data: { avatarUri: string | null; bio: string; homeCountry: string; interests: string[] }) => {
-    const userData = { name, username, email, ...data };
-    setUser(userData);
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
+
+    let avatarUrl: string | null = null;
+
+    // Upload avatar to Firebase Storage if one was picked
+    if (data.avatarUri) {
+      try {
+        const response = await fetch(data.avatarUri);
+        const blob = await response.blob();
+        const avatarRef = ref(storage, `avatars/${firebaseUser.uid}/avatar.jpg`);
+        await uploadBytes(avatarRef, blob);
+        avatarUrl = await getDownloadURL(avatarRef);
+      } catch (_) {}
+    }
+
+    const userData = {
+      id: firebaseUser.uid,
+      name,
+      username,
+      email,
+      avatarUri: avatarUrl,
+      bio: data.bio,
+      homeCountry: data.homeCountry,
+      interests: data.interests,
+    };
+
+    // Save to Firestore
     try {
-      await AsyncStorage.setItem('@travlora_user', JSON.stringify(userData));
+      await setDoc(doc(db, 'users', firebaseUser.uid), userData);
     } catch (_) {}
+
+    setUser(userData);
   };
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [bio, setBio] = useState('');
   const [homeCountry, setHomeCountry] = useState('');
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [followedUsers, setFollowedUsers] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const pickAvatar = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -88,12 +120,14 @@ export default function ProfileSetupScreen() {
     );
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (selectedInterests.length === 0) {
       Alert.alert('Pick your interests', 'Select at least one travel interest.');
       return;
     }
-    onComplete({ avatarUri, bio, homeCountry, interests: selectedInterests });
+    setSaving(true);
+    await onComplete({ avatarUri, bio, homeCountry, interests: selectedInterests });
+    setSaving(false);
   };
 
   const firstLetter = name ? name[0].toUpperCase() : 'T';
@@ -235,13 +269,13 @@ export default function ProfileSetupScreen() {
             </View>
 
             {/* Complete */}
-            <TouchableOpacity onPress={handleComplete} style={styles.primaryBtn}>
+            <TouchableOpacity onPress={handleComplete} disabled={saving} style={styles.primaryBtn}>
               <LinearGradient
                 colors={[theme.colors.primary, theme.colors.accent]}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                 style={styles.primaryGradient}
               >
-                <Text style={styles.primaryText}>Let's Go! ✈️</Text>
+                <Text style={styles.primaryText}>{saving ? 'Setting up…' : "Let's Go! ✈️"}</Text>
               </LinearGradient>
             </TouchableOpacity>
 

@@ -1,7 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 export type LoggedInUser = {
+  id: string;
   name: string;
   username: string;
   email: string;
@@ -140,6 +144,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [tripStories, setTripStories] = useState<TripStory[]>([]);
   const [activeLiveTrip, setActiveLiveTrip] = useState<LiveTrip | null>(null);
   const [completedLiveTrips, setCompletedLiveTrips] = useState<CompletedLiveTrip[]>([]);
+
+  // Firebase auth listener — auto login/logout
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+        if (snap.exists()) setUser(snap.data() as LoggedInUser);
+      } else {
+        setUser(null);
+      }
+    });
+    return unsub;
+  }, []);
 
   // Load persisted data on mount
   useEffect(() => {

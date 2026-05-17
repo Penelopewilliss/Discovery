@@ -14,6 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebase';
 import { theme } from '../theme';
 import { AuthStackParamList } from '../navigation/types';
 
@@ -21,16 +23,15 @@ export default function SignUpScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const onBack = () => navigation.goBack();
   const onLogin = () => navigation.navigate('Login');
-  const onNext = (data: { name: string; username: string; email: string }) =>
-    navigation.navigate('ProfileSetup', data);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!name.trim() || !username.trim() || !email.trim() || !password.trim()) {
       Alert.alert('Missing fields', 'Please fill in all fields.');
       return;
@@ -47,7 +48,23 @@ export default function SignUpScreen() {
       Alert.alert('Invalid username', 'Username cannot contain @. Just use letters, numbers and dots.');
       return;
     }
-    onNext({ name, username: username.replace(/[^a-zA-Z0-9._]/g, '').toLowerCase(), email });
+    setLoading(true);
+    try {
+      await createUserWithEmailAndPassword(auth, email.trim(), password);
+      navigation.navigate('ProfileSetup', {
+        name: name.trim(),
+        username: username.replace(/[^a-zA-Z0-9._]/g, '').toLowerCase(),
+        email: email.trim(),
+      });
+    } catch (e: any) {
+      const msg =
+        e.code === 'auth/email-already-in-use'
+          ? 'An account with this email already exists.'
+          : e.message;
+      Alert.alert('Sign up failed', msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -129,13 +146,13 @@ export default function SignUpScreen() {
               <Text style={styles.termsLink}>Privacy Policy</Text>.
             </Text>
 
-            <TouchableOpacity onPress={handleNext} style={styles.primaryBtn}>
+            <TouchableOpacity onPress={handleNext} disabled={loading} style={styles.primaryBtn}>
               <LinearGradient
                 colors={[theme.colors.primary, theme.colors.accent]}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                 style={styles.primaryGradient}
               >
-                <Text style={styles.primaryText}>Continue →</Text>
+                <Text style={styles.primaryText}>{loading ? 'Creating account…' : 'Continue →'}</Text>
               </LinearGradient>
             </TouchableOpacity>
 
