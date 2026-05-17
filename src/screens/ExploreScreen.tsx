@@ -1340,7 +1340,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     borderStyle: 'dashed',
   },
-  photoPickerPreview: { width: '100%', height: '100%' },
+  photoPickerPreview: { width: '100%', height: 140, borderRadius: 14, overflow: 'hidden' },
   photoPickerEmpty: {
     flex: 1,
     alignItems: 'center',
