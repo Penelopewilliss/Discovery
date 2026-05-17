@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { addPost, mockPlaces } from '../data/mockData';
+import { uploadPostMedia, createPostInFirestore } from '../services/postsService';
 import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem } from '../types';
 import GlassCard from '../components/GlassCard';
 import { useUser } from '../context/UserContext';
@@ -142,7 +143,9 @@ export default function CreatePostScreen() {
     );
   };
 
-  const handlePost = () => {
+  const [posting, setPosting] = useState(false);
+
+  const handlePost = async () => {
     if (!caption.trim()) {
       Alert.alert('Missing caption', 'Please write a caption for your post.');
       return;
@@ -155,95 +158,110 @@ export default function CreatePostScreen() {
       Alert.alert('Missing category', 'Please select at least one travel tag.');
       return;
     }
+    if (!user?.id) {
+      Alert.alert('Not logged in', 'Please log in to post.');
+      return;
+    }
 
-    postCounter += 1;
-    const newPost: Post = {
-      id: `post_new_${postCounter}`,
-      userId: user?.id ?? 'user_1',
-      username: user?.username ?? 'aurora.travels',
-      userAvatar: user?.avatar ?? null,
-      imageUrl: mediaItems.length > 0 ? mediaItems[0].uri : mockPlaces[Math.floor(Math.random() * mockPlaces.length)].coverImage,
-      mediaItems: mediaItems.length > 0 ? mediaItems : undefined,
-      caption,
-      locationArea: destination,
-      destination,
-      tags: selectedTags,
-      mood: selectedMood,
-      likes: 0,
-      comments: 0,
-      delay,
-      privacy,
-      hideExactLocation: hideExact,
-      blurLocation,
-      hideStayLocation: hideStay,
-      createdAt: new Date().toISOString(),
-      liked: false,
-      saved: false,
-      reactions: {},
-      userReaction: null,
-      reactionsEnabled,
-    };
+    setPosting(true);
+    try {
+      const postId = `post_${Date.now()}`;
 
-    addPost(newPost);
+      // Upload media to Firebase Storage
+      const uploadedMedia = mediaItems.length > 0
+        ? await uploadPostMedia(user.id, postId, mediaItems)
+        : [];
 
-    // Auto-mark the tagged place as visited
-    if (selectedPlaceFsq) {
-      const geo = selectedPlaceFsq.geocodes?.main;
-      if (geo) {
+      const postData = {
+        id: postId,
+        userId: user.id,
+        username: user.username,
+        userAvatar: user.avatarUri ?? null,
+        imageUrl: uploadedMedia[0]?.uri ?? '',
+        mediaItems: uploadedMedia,
+        caption,
+        locationArea: destination,
+        destination,
+        tags: selectedTags,
+        mood: selectedMood,
+        likes: 0,
+        comments: 0,
+        delay,
+        privacy,
+        hideExactLocation: hideExact,
+        blurLocation,
+        hideStayLocation: hideStay,
+        createdAt: new Date().toISOString(),
+        reactions: {},
+        userReaction: null,
+        reactionsEnabled,
+      };
+
+      await createPostInFirestore(postData);
+
+      // Auto-mark the tagged place as visited
+      if (selectedPlaceFsq) {
+        const geo = selectedPlaceFsq.geocodes?.main;
+        if (geo) {
+          markVisited({
+            id: selectedPlaceFsq.fsq_id ?? `post_place_${Date.now()}`,
+            name: selectedPlaceFsq.name,
+            country: selectedPlaceFsq.location.country ?? selectedPlaceFsq.location.locality ?? '',
+            lat: geo.latitude,
+            lon: geo.longitude,
+            coverImage: uploadedMedia[0]?.uri ?? '',
+            visitedAt: new Date().toISOString(),
+          });
+        }
+      } else if (destination.trim()) {
         markVisited({
-          id: selectedPlaceFsq.fsq_id ?? `post_place_${Date.now()}`,
-          name: selectedPlaceFsq.name,
-          country: selectedPlaceFsq.location.country ?? selectedPlaceFsq.location.locality ?? '',
-          lat: geo.latitude,
-          lon: geo.longitude,
-          coverImage: mediaItems[0]?.uri ?? '',
+          id: `post_dest_${Date.now()}`,
+          name: destination.trim(),
+          country: '',
+          lat: 0,
+          lon: 0,
+          coverImage: uploadedMedia[0]?.uri ?? '',
           visitedAt: new Date().toISOString(),
         });
       }
-    } else if (destination.trim()) {
-      // Plain text destination typed (no suggestion picked) — still add as a visited entry
-      markVisited({
-        id: `post_dest_${Date.now()}`,
-        name: destination.trim(),
-        country: '',
-        lat: 0,
-        lon: 0,
-        coverImage: mediaItems[0]?.uri ?? '',
-        visitedAt: new Date().toISOString(),
-      });
+
+      // Send local notification feedback
+      if (delay === 'now') {
+        scheduleLocalNotification('✈️ Post is live!', `Your memory from ${destination} is now on the feed.`);
+      } else {
+        const delayMap: Record<PostDelay, number> = {
+          now: 0, '6h': 21600, '24h': 86400, '48h': 172800,
+          'after leaving': 43200, 'after trip': 259200,
+        };
+        scheduleDelayedPostNotification(destination, delayMap[delay]);
+      }
+
+      Alert.alert(
+        '✈️ Post created!',
+        delay === 'now'
+          ? 'Your post is now live on the feed.'
+          : `Your post will be published ${DELAY_OPTIONS.find((d) => d.value === delay)?.label.replace(/^.+? /, 'after ')} for your privacy.`,
+        [{ text: 'Got it' }]
+      );
+
+      // Reset form
+      setCaption('');
+      setDestination('');
+      setSelectedTags([]);
+      setSelectedMood('wanderlust');
+      setDelay('24h');
+      setPrivacy('public');
+      setHideExact(true);
+      setBlurLocation(false);
+      setHideStay(true);
+      setReactionsEnabled(true);
+      setMediaItems([]);
+      setSelectedPlaceFsq(null);
+    } catch (e: any) {
+      Alert.alert('Post failed', e.message ?? 'Something went wrong. Try again.');
+    } finally {
+      setPosting(false);
     }
-
-    // Send local notification feedback
-    if (delay === 'now') {
-      scheduleLocalNotification('✈️ Post is live!', `Your memory from ${destination} is now on the feed.`);
-    } else {
-      const delayMap: Record<PostDelay, number> = {
-        now: 0, '6h': 21600, '24h': 86400, '48h': 172800,
-        'after leaving': 43200, 'after trip': 259200,
-      };
-      scheduleDelayedPostNotification(destination, delayMap[delay]);
-    }
-
-    Alert.alert(
-      '✈️ Post created!',
-      delay === 'now'
-        ? 'Your post is now live on the feed.'
-        : `Your post will be published ${DELAY_OPTIONS.find((d) => d.value === delay)?.label.replace(/^.+? /, 'after ')} for your privacy.`,
-      [{ text: 'Got it' }]
-    );
-
-    // Reset form
-    setCaption('');
-    setDestination('');
-    setSelectedTags([]);
-    setSelectedMood('wanderlust');
-    setDelay('24h');
-    setPrivacy('public');
-    setHideExact(true);
-    setBlurLocation(false);
-    setHideStay(true);
-    setReactionsEnabled(true);
-    setMediaItems([]);
   };
 
   return (
@@ -518,14 +536,14 @@ export default function CreatePostScreen() {
         </View>
 
         {/* Submit */}
-        <TouchableOpacity onPress={handlePost} style={styles.submitBtn}>
+        <TouchableOpacity onPress={handlePost} disabled={posting} style={styles.submitBtn}>
           <LinearGradient
             colors={theme.colors.gradientPrimary as [string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.submitGradient}
           >
-            <Text style={styles.submitText}>✈️ Share Your Journey</Text>
+            <Text style={styles.submitText}>{posting ? '⏳ Uploading…' : '✈️ Share Your Journey'}</Text>
           </LinearGradient>
         </TouchableOpacity>
 

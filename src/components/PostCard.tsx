@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Post, PostDelay, Comment, MediaItem } from '../types';
 import { theme } from '../theme';
-import { toggleLike, toggleSave, toggleReaction, getComments, addComment, isFollowing, toggleFollowUser } from '../data/mockData';
+import { toggleFollowUser, isFollowing } from '../data/mockData';
+import {
+  likePost, unlikePost, savePost, unsavePost,
+  addCommentToFirestore, loadComments, setReaction,
+} from '../services/postsService';
 import { useUser } from '../context/UserContext';
 
 const { width } = Dimensions.get('window');
@@ -55,14 +59,17 @@ interface PostCardProps {
 
 export default function PostCard({ post, onUpdate }: PostCardProps) {
   const { user: loggedInUser } = useUser();
-  const isOwnPost = post.userId === (loggedInUser?.email ?? 'me') || post.userId === 'user_1';
+  const isOwnPost = post.userId === loggedInUser?.id || post.userId === 'user_1';
   const [following, setFollowing] = useState(() => isFollowing(post.userId));
   const [liked, setLiked] = useState(post.liked);
   const [saved, setSaved] = useState(post.saved);
   const [likes, setLikes] = useState(post.likes);
+  const [userReaction, setUserReaction] = useState<string | null>(post.userReaction);
+  const [reactions, setReactions] = useState<Record<string, number>>(post.reactions ?? {});
   const [showComments, setShowComments] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
-  const [comments, setComments] = useState<Comment[]>(() => getComments(post.id));
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [commentCount, setCommentCount] = useState(post.comments);
   const [commentText, setCommentText] = useState('');
   const [showHeartAnim, setShowHeartAnim] = useState(false);
@@ -70,19 +77,55 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [cardWidth, setCardWidth] = useState(0);
 
+  // Load comments when section is opened
+  useEffect(() => {
+    if (showComments && !commentsLoaded) {
+      loadComments(post.id).then((c) => {
+        setComments(c);
+        setCommentsLoaded(true);
+      });
+    }
+  }, [showComments, commentsLoaded, post.id]);
+
   const handleLike = () => {
-    toggleLike(post.id);
-    setLikes((prev) => (liked ? prev - 1 : prev + 1));
-    setLiked((prev) => !prev);
+    const nowLiked = !liked;
+    setLiked(nowLiked);
+    setLikes((prev) => (nowLiked ? prev + 1 : prev - 1));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (loggedInUser?.id) {
+      nowLiked
+        ? likePost(post.id, loggedInUser.id)
+        : unlikePost(post.id, loggedInUser.id);
+    }
     onUpdate();
   };
 
   const handleSave = () => {
-    toggleSave(post.id);
-    setSaved((prev) => !prev);
+    const nowSaved = !saved;
+    setSaved(nowSaved);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (loggedInUser?.id) {
+      nowSaved
+        ? savePost(post.id, loggedInUser.id)
+        : unsavePost(post.id, loggedInUser.id);
+    }
     onUpdate();
+  };
+
+  const handleReact = (emoji: string) => {
+    const prev = userReaction;
+    const next = prev === emoji ? null : emoji;
+    // Optimistic update
+    setUserReaction(next);
+    setReactions((r) => {
+      const updated = { ...r };
+      if (prev) updated[prev] = Math.max(0, (updated[prev] ?? 1) - 1);
+      if (next) updated[next] = (updated[next] ?? 0) + 1;
+      return updated;
+    });
+    if (loggedInUser?.id) {
+      setReaction(post.id, loggedInUser.id, next, prev);
+    }
   };
 
   const handleShare = async () => {
@@ -94,27 +137,24 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
     } catch (_) {}
   };
 
-  const handleSendComment = () => {
+  const handleSendComment = async () => {
     const text = commentText.trim();
     if (!text) return;
-    const newComment = addComment(post.id, text, {
-      userId: loggedInUser?.email ?? 'me',
+    setCommentText('');
+    const newComment = await addCommentToFirestore(post.id, text, {
+      userId: loggedInUser?.id ?? 'me',
       username: (loggedInUser?.username ?? 'traveler').replace(/@/g, ''),
-      userAvatar: loggedInUser?.avatarUri ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
+      userAvatar: loggedInUser?.avatarUri ?? '',
     });
     setComments((prev) => [newComment, ...prev]);
     setCommentCount((prev) => prev + 1);
-    setCommentText('');
     onUpdate();
   };
 
   const handleDoubleTap = () => {
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
-      // Double tap detected
-      if (!liked) {
-        handleLike();
-      }
+      if (!liked) handleLike();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setShowHeartAnim(true);
       setTimeout(() => setShowHeartAnim(false), 800);

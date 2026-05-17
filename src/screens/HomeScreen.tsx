@@ -22,7 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { theme } from '../theme';
-import { mockPosts } from '../data/mockData';
+import { listenToFeed } from '../services/postsService';
 import PostCard from '../components/PostCard';
 import { PostCardSkeleton } from '../components/SkeletonLoader';
 import { Post, PostDelay } from '../types';
@@ -874,7 +874,7 @@ function StoriesBar({
 // ── Home Screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
-  const { tripStories, activeLiveTrip } = useUser();
+  const { tripStories, activeLiveTrip, user } = useUser();
   const seenTripStoryIds = useRef(new Set<string>());
   const [stories, setStories] = useState<Story[]>(INITIAL_STORIES);
   const [seenIds, setSeenIds] = useState<string[]>(['s3', 's5']);
@@ -883,7 +883,8 @@ export default function HomeScreen() {
   const [editorMediaType, setEditorMediaType] = useState<'photo' | 'video'>('photo');
   const [activeTag, setActiveTag] = useState('All');
   const [tick, setTick] = useState(0);
-  const [isLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [feedPosts, setFeedPosts] = useState<Post[]>([]);
   const storyCounterRef = useRef(0);
 
   const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
@@ -891,6 +892,16 @@ export default function HomeScreen() {
   const markSeen = useCallback((id: string) => {
     setSeenIds((prev) => [...new Set([...prev, id])]);
   }, []);
+
+  // Firestore real-time feed
+  useEffect(() => {
+    if (!user?.id) { setIsLoading(false); return; }
+    const unsub = listenToFeed(user.id, (posts) => {
+      setFeedPosts(posts);
+      setIsLoading(false);
+    });
+    return unsub;
+  }, [user?.id]);
 
   // Inject new trip stories shared from the Trips tab into the stories row
   useEffect(() => {
@@ -1021,8 +1032,8 @@ export default function HomeScreen() {
 
   const filtered: Post[] =
     activeTag === 'All'
-      ? mockPosts
-      : mockPosts.filter((p) => p.tags.includes(activeTag as any));
+      ? feedPosts
+      : feedPosts.filter((p) => p.tags.includes(activeTag as any));
 
   // Stories passed to the viewer never include the permanent placeholder
   const viewableStories = stories.filter((s) => !s.isOwnPlaceholder);
