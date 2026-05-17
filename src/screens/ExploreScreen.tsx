@@ -55,7 +55,7 @@ function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
 
 export default function ExploreScreen() {
   const { isVisited, markVisited, removeVisited, createTrip, mapPins, addMapPin, updateMapPin, deleteMapPin,
-    activeLiveTrip, startLiveTrip, addLiveTripPin, endLiveTrip } = useUser();
+    activeLiveTrip, startLiveTrip, addLiveTripPin, pauseLiveTrip, resumeLiveTrip, endLiveTrip } = useUser();
   const mapRef = useRef<LeafletMapRef>(null);
   const locationSub = useRef<Location.LocationSubscription | null>(null);
   const [query, setQuery] = useState('');
@@ -477,13 +477,18 @@ export default function ExploreScreen() {
           {activeLiveTrip ? (
             // ── Live trip active controls ──────────────────────────────
             <View style={styles.fabRow}>
-              <View style={styles.liveBadge}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveBadgeText}>LIVE · {activeLiveTrip.name}</Text>
+              {/* Status badge — red when live, amber when paused */}
+              <View style={[styles.liveBadge, activeLiveTrip.status === 'paused' && styles.liveBadgePaused]}>
+                <View style={[styles.liveDot, activeLiveTrip.status === 'paused' && styles.liveDotPaused]} />
+                <Text style={styles.liveBadgeText}>
+                  {activeLiveTrip.status === 'paused' ? '⏸ PAUSED' : '🔴 LIVE'} · {activeLiveTrip.name}
+                </Text>
               </View>
               <View style={styles.liveActions}>
+                {/* Drop Stop — disabled while paused */}
                 <TouchableOpacity
-                  style={styles.photoPinFab}
+                  style={[styles.photoPinFab, activeLiveTrip.status === 'paused' && styles.fabDisabled]}
+                  disabled={activeLiveTrip.status === 'paused'}
                   onPress={() =>
                     Alert.alert('Add a Stop', 'How do you want to capture this moment?', [
                       { text: '📷 Take Photo', onPress: () => openDropStop('camera') },
@@ -495,18 +500,22 @@ export default function ExploreScreen() {
                 >
                   <Text style={styles.tripFabText}>📸 Drop Stop</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.viewStopsFab}
-                  onPress={() => setSummaryMode('view')}
-                >
-                  <Text style={styles.tripFabText}>
-                    👁 {activeLiveTrip.pins.length}
-                  </Text>
+                {/* Pause / Resume toggle */}
+                {activeLiveTrip.status === 'active' ? (
+                  <TouchableOpacity style={styles.pauseFab} onPress={pauseLiveTrip}>
+                    <Text style={styles.tripFabText}>⏸</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.resumeFab} onPress={resumeLiveTrip}>
+                    <Text style={styles.tripFabText}>▶ Resume</Text>
+                  </TouchableOpacity>
+                )}
+                {/* View stops */}
+                <TouchableOpacity style={styles.viewStopsFab} onPress={() => setSummaryMode('view')}>
+                  <Text style={styles.tripFabText}>👁 {activeLiveTrip.pins.length}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.endTripFab}
-                  onPress={() => setSummaryMode('end')}
-                >
+                {/* End */}
+                <TouchableOpacity style={styles.endTripFab} onPress={() => setSummaryMode('end')}>
                   <Text style={styles.tripFabText}>■ End</Text>
                 </TouchableOpacity>
               </View>
@@ -1293,13 +1302,36 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 6,
   },
+  liveBadgePaused: {
+    backgroundColor: 'rgba(180,83,9,0.92)',
+  },
   liveDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: '#fff',
   },
+  liveDotPaused: {
+    backgroundColor: '#fbbf24',
+  },
   liveBadgeText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  pauseFab: {
+    backgroundColor: '#b45309',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 28,
+    elevation: 8,
+  },
+  resumeFab: {
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 28,
+    elevation: 8,
+  },
+  fabDisabled: {
+    opacity: 0.35,
+  },
   liveActions: {
     flexDirection: 'row',
     justifyContent: 'center',
