@@ -155,8 +155,8 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
         </View>
       </View>
 
-      {/* Trip Card Visual — shown instead of image for trip share posts */}
-      {post.tripShare ? (
+      {/* Trip Card Visual — gradient card when no map; image+strip when map included */}
+      {post.tripShare && !post.tripShare.mapIncluded ? (
         <LinearGradient
           colors={['#6366f1', '#8b5cf6', '#a78bfa']}
           start={{ x: 0, y: 0 }}
@@ -187,7 +187,7 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
           <Text style={styles.tripCardWatermark}>HiddenGems · Trip Plan</Text>
         </LinearGradient>
       ) : (
-      /* Image / Carousel */
+      /* Image / Carousel (also used when mapIncluded — imageUrl is the static map) */
       (() => {
         const items: MediaItem[] = post.mediaItems && post.mediaItems.length > 0
           ? post.mediaItems
@@ -265,6 +265,19 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
         );
       })()
       /* end carousel */
+      )}
+
+      {/* Trip info strip — shown below the map image when mapIncluded */}
+      {post.tripShare?.mapIncluded && (
+        <View style={styles.tripMapStrip}>
+          <Text style={styles.tripMapStripName} numberOfLines={1}>
+            ✈️  {post.tripShare.tripName}
+          </Text>
+          <Text style={styles.tripMapStripRoute} numberOfLines={1}>
+            {post.tripShare.stops.slice(0, 4).join('  →  ')}
+            {post.tripShare.stops.length > 4 ? `  +${post.tripShare.stops.length - 4}` : ''}
+          </Text>
+        </View>
       )}
 
       {/* Tags */}
@@ -525,6 +538,16 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'right',
   },
+  // Trip info strip shown below map image
+  tripMapStrip: {
+    backgroundColor: '#1e1b4b',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  tripMapStripName: { color: '#fff', fontWeight: '700', fontSize: 14, marginBottom: 2 },
+  tripMapStripRoute: { color: 'rgba(255,255,255,0.65)', fontSize: 12 },
   image: {
     width: '100%',
     height: '100%',

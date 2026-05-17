@@ -88,6 +88,7 @@ export interface Post {
     stops: string[];
     countries: string[];
     stopCount: number;
+    mapIncluded?: boolean;  // when true, imageUrl is a static map image
   };
 }
 

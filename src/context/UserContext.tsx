@@ -48,7 +48,8 @@ export type TripStory = {
   id: string;
   username: string;
   avatar: string | null;
-  bgImage: string;
+  bgImage: string;       // travel bg or static map URL
+  mapIncluded?: boolean; // true = bgImage is the static map
   tripName: string;
   stops: string[];
   caption: string;

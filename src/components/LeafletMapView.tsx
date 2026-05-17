@@ -39,6 +39,8 @@ interface Props {
   onMapPress?: (lat: number, lng: number) => void;
   /** Initial user location dot (live updates via ref.updateUserLocation) */
   userLocation?: { latitude: number; longitude: number } | null;
+  /** When false, disables all dragging/zooming — use for decorative previews (default: true) */
+  interactive?: boolean;
 }
 
 function deltaToZoom(delta: number): number {
@@ -57,8 +59,7 @@ const LeafletMapView = forwardRef<LeafletMapRef, Props>(({
   polylineColor = '#6366f1',
   onMarkerPress,
   onMapPress,
-  userLocation,
-}, ref) => {
+  userLocation,  interactive = true,}, ref) => {
   const webViewRef = useRef<WebView>(null);
 
   useImperativeHandle(ref, () => ({
@@ -129,7 +130,15 @@ const LeafletMapView = forwardRef<LeafletMapRef, Props>(({
   <div id="map"></div>
   <script>
     var RN=window.ReactNativeWebView||null;
-    var map=L.map('map',{zoomControl:true}).setView([${region.latitude},${region.longitude}],${z});
+    var _interactive=${interactive ? 'true' : 'false'};
+    var map=L.map('map',{
+      zoomControl:_interactive,
+      dragging:_interactive,
+      touchZoom:_interactive,
+      scrollWheelZoom:_interactive,
+      doubleClickZoom:_interactive,
+      keyboard:_interactive
+    }).setView([${region.latitude},${region.longitude}],${z});
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
       maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OSM</a>'
     }).addTo(map);
@@ -137,6 +146,7 @@ const LeafletMapView = forwardRef<LeafletMapRef, Props>(({
     ${polylineJs}
     ${initLocJs}
     map.on('click',function(e){
+      if(!_interactive)return;
       RN&&RN.postMessage(JSON.stringify({type:'click',lat:e.latlng.lat,lng:e.latlng.lng}));
     });
   </script>
