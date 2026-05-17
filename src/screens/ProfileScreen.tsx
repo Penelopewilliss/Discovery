@@ -414,9 +414,9 @@ export default function ProfileScreen() {
             </GlassCard>
           </TouchableOpacity>
 
-          {/* ═══ Live Trip History ═══ */}
+          {/* ═══ My Trips ═══ */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>🔴 Live Trip History</Text>
+            <Text style={styles.sectionTitle}>🔴 My Trips</Text>
           </View>
           {completedLiveTrips.length === 0 ? (
             <GlassCard style={styles.tripsEmptyCard}>
@@ -491,9 +491,9 @@ export default function ProfileScreen() {
             })
           )}
 
-          {/* My Trips — planned journeys */}
+          {/* My Planned Trips — planned journeys */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>✈️ My Trips</Text>
+            <Text style={styles.sectionTitle}>✈️ My Planned Trips</Text>
           </View>
           {trips.length === 0 ? (
             <GlassCard style={styles.tripsEmptyCard}>
