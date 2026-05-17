@@ -365,9 +365,9 @@ export default function ProfileScreen() {
             {visitedPlaces.length > 0 && (
               <TouchableOpacity
                 onPress={async () => {
-                  const names = visitedPlaces.map((p) => `${p.name}, ${p.country}`).join(' → ');
+                  const names = visitedPlaces.map((p) => p.country ? `${p.name}, ${p.country}` : p.name).join('  ·  ');
                   await Share.share({
-                    message: `My travel journey on Discovery:\n${names}\n\nDownload Discovery to build yours! 🌍`,
+                    message: `Places I've visited on Discovery:\n${names}\n\nDownload Discovery to build yours! 🌍`,
                     title: 'My Discovery Travel Map',
                   });
                 }}
@@ -384,7 +384,7 @@ export default function ProfileScreen() {
                   <Text style={styles.travelMapEmptyEmoji}>🌍</Text>
                   <Text style={styles.travelMapEmptyTitle}>No places visited yet</Text>
                   <Text style={styles.travelMapEmptySub}>
-                    Explore destinations and tap "I've been here!" to start your travel map.
+                    Drop a pin on the map, tag a place in a post, or drop stops on a live trip to start building your collection.
                   </Text>
                 </View>
               ) : (
@@ -407,17 +407,7 @@ export default function ProfileScreen() {
                       <Text style={styles.travelMapStatLabel}>Years</Text>
                     </View>
                   </View>
-                  <View style={styles.travelMapMiniRoute}>
-                    {visitedPlaces.slice(0, 5).map((p, i) => (
-                      <View key={p.id} style={styles.travelMapMiniStop}>
-                        {i > 0 && <Text style={styles.travelMapArrow}>→</Text>}
-                        <Text style={styles.travelMapMiniStopText} numberOfLines={1}>{p.name}</Text>
-                      </View>
-                    ))}
-                    {visitedPlaces.length > 5 && (
-                      <Text style={styles.travelMapMore}>+{visitedPlaces.length - 5} more</Text>
-                    )}
-                  </View>
+                  {/* place list hidden — visible in full map */}
                   <Text style={styles.travelMapTap}>Tap to open full map →</Text>
                 </>
               )}
@@ -827,14 +817,14 @@ export default function ProfileScreen() {
                   <View key={place.id} style={styles.travelMapStopChip}>
                     <Text style={styles.travelMapStopNum}>{i + 1}</Text>
                     <Text style={styles.travelMapStopName} numberOfLines={1}>{place.name}</Text>
-                    <Text style={styles.travelMapStopCountry} numberOfLines={1}>{place.country}</Text>
+                    <Text style={styles.travelMapStopCountry} numberOfLines={1}>{place.country || 'Pinned location'}</Text>
                   </View>
                 ))}
               </ScrollView>
               <TouchableOpacity
                 style={styles.travelMapShareBtn}
                 onPress={async () => {
-                  const names = visitedPlaces.map((p, i) => `${i + 1}. ${p.name}, ${p.country}`).join('\n');
+                  const names = visitedPlaces.map((p, i) => `${i + 1}. ${p.name}${p.country ? ', ' + p.country : ''}`).join('\n');
                   await Share.share({
                     message: `🗺️ My travel journey on Discovery:\n\n${names}\n\nDiscover yours at discoveryapp.com 🌍`,
                     title: 'My Discovery Travel Map',
@@ -1435,25 +1425,25 @@ const styles = StyleSheet.create({
     ...theme.typography.tiny,
     marginTop: 2,
   },
-  travelMapMiniRoute: {
+  travelMapChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 4,
+    gap: 6,
     marginBottom: theme.spacing.sm,
   },
-  travelMapMiniStop: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  travelMapArrow: { color: theme.colors.textMuted, fontSize: 12 },
-  travelMapMiniStopText: {
-    color: theme.colors.textSecondary,
-    ...theme.typography.caption,
-    fontWeight: '600',
-    maxWidth: 80,
+  travelMapChip: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  travelMapMore: {
-    color: theme.colors.primary,
-    ...theme.typography.caption,
-    fontWeight: '700',
+  travelMapChipText: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+    maxWidth: 120,
   },
   travelMapTap: {
     color: theme.colors.primary,
