@@ -14,7 +14,6 @@ import {
   Modal,
   FlatList,
   Share,
-  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,7 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 
 
-const SCREEN = Dimensions.get('window');
+
 import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
@@ -651,12 +650,13 @@ export default function ProfileScreen() {
                     const thumb = post.mediaItems?.[0]?.uri ?? post.imageUrl;
                     return (
                       <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
-                        {thumb ? (
-                          <Image source={{ uri: thumb }} style={styles.gridImage} resizeMode="cover" />
-                        ) : (
-                          <View style={[styles.gridImage, { backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' }]}>
-                            <Text style={{ fontSize: 28 }}>🗺️</Text>
-                          </View>
+                        {/* Fallback always underneath */}
+                        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface }]}>
+                          <Text style={{ fontSize: 28 }}>🗺️</Text>
+                        </View>
+                        {/* Image on top — covers fallback when loaded */}
+                        {!!thumb && (
+                          <Image source={{ uri: thumb }} style={StyleSheet.absoluteFill} resizeMode="cover" />
                         )}
                         {post.mediaItems && post.mediaItems.length > 1 && (
                           <View style={styles.gridMultiBadge}>
@@ -728,13 +728,13 @@ export default function ProfileScreen() {
                           ]);
                         }}
                       >
-                        <View style={styles.archiveOverlay} />
-                        {thumb ? (
-                          <Image source={{ uri: thumb }} style={[styles.gridImage, { opacity: 0.6 }]} resizeMode="cover" />
-                        ) : (
-                          <View style={[styles.gridImage, { backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center', opacity: 0.6 }]}>
-                            <Text style={{ fontSize: 28 }}>🗺️</Text>
-                          </View>
+                        {/* Fallback always underneath */}
+                        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface, opacity: 0.6 }]}>
+                          <Text style={{ fontSize: 28 }}>🗺️</Text>
+                        </View>
+                        {/* Dimmed image on top */}
+                        {!!thumb && (
+                          <Image source={{ uri: thumb }} style={[StyleSheet.absoluteFill, { opacity: 0.6 }]} resizeMode="cover" />
                         )}
                         <View style={styles.archiveBadge}>
                           <Text style={styles.archiveBadgeText}>📦</Text>
@@ -1709,23 +1709,22 @@ const styles = StyleSheet.create({
   },
   postsSection: {
     marginBottom: theme.spacing.lg,
+    marginHorizontal: -theme.spacing.md,
   },
   postsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -1,
   },
   gridItem: {
-    width: (SCREEN.width - theme.spacing.md * 2 - 2) / 3,
+    width: '33.33%',
     aspectRatio: 1,
-    margin: 1,
+    borderWidth: 1,
+    borderColor: theme.colors.background,
     overflow: 'hidden',
-    borderRadius: 4,
     backgroundColor: theme.colors.surface,
   },
   gridImage: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
   },
   gridMultiBadge: {
     position: 'absolute',
