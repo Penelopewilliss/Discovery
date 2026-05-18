@@ -34,7 +34,7 @@ import {
   FriendStatus,
   Friend,
 } from '../services/socialService';
-import { followUser, unfollowUser } from '../services/postsService';
+import { followUser, unfollowUser, getOrCreateDMConversation } from '../services/postsService';
 import { Post } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'OtherUserProfile'>;
@@ -112,7 +112,7 @@ export default function OtherUserProfileScreen() {
       // Posts
       if (canSeePosts) {
         const postsSnap = await getDocs(
-          query(collection(db, 'posts'), where('userId', '==', userId), orderBy('createdAt', 'desc'), limit(30)),
+          query(collection(db, 'posts'), where('userId', '==', userId), limit(30)),
         );
         const mapped: Post[] = postsSnap.docs.map((d) => {
           const pd = d.data();
@@ -132,8 +132,9 @@ export default function OtherUserProfileScreen() {
             reactionsEnabled: pd.reactionsEnabled ?? true,
           } as Post;
         });
-        setPosts(mapped);
-        setPostsCount(mapped.length);
+        const sorted = mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setPosts(sorted.filter((p) => !p.archived));
+        setPostsCount(sorted.filter((p) => !p.archived).length);
       } else {
         setPostsCount(0);
       }
@@ -242,6 +243,19 @@ export default function OtherUserProfileScreen() {
     return 'Add Friend';
   };
 
+  const handleMessage = async () => {
+    if (!me || !otherUser) return;
+    try {
+      const conv = await getOrCreateDMConversation(
+        me.id, me.username, me.avatarUri ?? null,
+        otherUser.id, otherUser.username, otherUser.avatarUri ?? null,
+      );
+      navigation.navigate('Chat', { conversation: conv });
+    } catch {
+      Alert.alert('Error', 'Could not open chat. Try again.');
+    }
+  };
+
   const canSeePosts = !otherUser?.privateProfile || isMe || followStatus === 'following';
 
   if (loading) {
@@ -336,6 +350,9 @@ export default function OtherUserProfileScreen() {
                 <Text style={[s.friendBtnText, friendStatus === 'friends' && s.friendBtnTextActive]}>
                   {friendLabel()}
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.msgBtn} onPress={handleMessage}>
+                <Text style={s.msgBtnText}>💬</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -545,6 +562,16 @@ const s = StyleSheet.create({
     fontWeight: '700',
   },
   friendBtnTextActive: { color: '#22c55e' },
+  msgBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  msgBtnText: { fontSize: 18 },
   statsBlock: {
     flexDirection: 'row',
     alignItems: 'center',

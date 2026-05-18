@@ -27,7 +27,7 @@ import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, limit } from 'firebase/firestore';
-import { FirestoreStory, deleteStory, unarchivePostInFirestore } from '../services/postsService';
+import { FirestoreStory, deleteStory, unarchivePostInFirestore, getOrCreateDMConversation } from '../services/postsService';
 import {
   getIncomingFollowRequests, acceptFollowRequest, declineFollowRequest,
   getIncomingFriendRequests, acceptFriendRequest, declineFriendRequest,
@@ -214,7 +214,7 @@ export default function ProfileScreen() {
     }).catch(() => {});
 
     // Load the user's own posts
-    getDocs(query(collection(db, 'posts'), where('userId', '==', uid), orderBy('createdAt', 'desc'), limit(50))).then((snap) => {
+    getDocs(query(collection(db, 'posts'), where('userId', '==', uid), limit(50))).then((snap) => {
       const mapped: Post[] = snap.docs.map((d) => {
         const pd = d.data();
         return {
@@ -234,8 +234,9 @@ export default function ProfileScreen() {
           archived: pd.archived ?? false,
         } as Post;
       });
-      setMyPosts(mapped.filter((p) => !p.archived));
-      setArchivedPosts(mapped.filter((p) => p.archived));
+      const sorted = mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setMyPosts(sorted.filter((p) => !p.archived));
+      setArchivedPosts(sorted.filter((p) => p.archived));
     }).catch(() => {});
 
     // Load the user's own stories (last 18 h)
@@ -768,11 +769,12 @@ export default function ProfileScreen() {
               </View>
             }
             renderItem={({ item }) => (
-              <TouchableOpacity
-                onPress={() => { setShowFriendsList(false); navigation.navigate('OtherUserProfile', { userId: item.id }); }}
-                activeOpacity={0.8}
-              >
-                <View style={styles.userListRow}>
+              <View style={styles.userListRow}>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                  onPress={() => { setShowFriendsList(false); navigation.navigate('OtherUserProfile', { userId: item.id }); }}
+                  activeOpacity={0.8}
+                >
                   <View style={styles.userListAvatar}>
                     {item.avatar
                       ? <Image source={{ uri: item.avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
@@ -782,9 +784,26 @@ export default function ProfileScreen() {
                     <Text style={styles.userListName}>{item.username}</Text>
                     <Text style={styles.userListSub}>@{item.username}</Text>
                   </View>
-                  <Text style={{ color: theme.colors.textSecondary }}>›</Text>
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.friendMsgBtn}
+                  onPress={async () => {
+                    if (!loggedInUser) return;
+                    try {
+                      const conv = await getOrCreateDMConversation(
+                        loggedInUser.id, loggedInUser.username, loggedInUser.avatarUri ?? null,
+                        item.id, item.username, item.avatar ?? null,
+                      );
+                      setShowFriendsList(false);
+                      navigation.navigate('Chat', { conversation: conv });
+                    } catch {
+                      Alert.alert('Error', 'Could not open chat. Try again.');
+                    }
+                  }}
+                >
+                  <Text style={{ fontSize: 18 }}>💬</Text>
+                </TouchableOpacity>
+              </View>
             )}
           />
         </View>
@@ -1439,6 +1458,16 @@ const styles = StyleSheet.create({
   },
   userListName: { color: theme.colors.text, fontSize: 15, fontWeight: '600' },
   userListHandle: { color: theme.colors.textMuted, fontSize: 13, marginTop: 1 },
+  friendMsgBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
   badgeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

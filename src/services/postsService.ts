@@ -22,7 +22,7 @@ import {
 } from 'firebase/firestore';
 import * as FileSystem from 'expo-file-system/legacy';
 import { db, storage, auth } from '../firebase';
-import { Post, MediaItem, Comment } from '../types';
+import { Post, MediaItem, Comment, Conversation } from '../types';
 
 // ─── Media Upload ───────────────────────────────────────────────────────────
 
@@ -129,6 +129,63 @@ export async function unarchivePostInFirestore(postId: string): Promise<void> {
 
 export async function updatePostPrivacyInFirestore(postId: string, privacy: string): Promise<void> {
   await updateDoc(doc(db, 'posts', postId), { privacy });
+}
+
+// ─── DM Conversations ──────────────────────────────────────────────────────
+
+export async function getOrCreateDMConversation(
+  myId: string,
+  myUsername: string,
+  myAvatar: string | null,
+  otherId: string,
+  otherUsername: string,
+  otherAvatar: string | null,
+): Promise<Conversation> {
+  // Check for existing DM conversation
+  const snap = await getDocs(
+    query(collection(db, 'conversations'), where('type', '==', 'dm'), where('participants', 'array-contains', myId)),
+  );
+  const existing = snap.docs.find((d) => (d.data().participants as string[]).includes(otherId));
+  if (existing) {
+    const data = existing.data();
+    return {
+      id: existing.id,
+      type: 'dm',
+      otherUserId: otherId,
+      otherUsername,
+      otherAvatar,
+      lastMessage: data.lastMessage,
+      lastMessageAt: data.lastMessageAt instanceof Timestamp
+        ? data.lastMessageAt.toDate().toISOString()
+        : data.lastMessageAt ?? undefined,
+      unreadCount: data.unreadCounts?.[myId] ?? 0,
+      locationSharingEnabled: data.locationSharingEnabled ?? false,
+    };
+  }
+  // Create new conversation
+  const ref = await addDoc(collection(db, 'conversations'), {
+    type: 'dm',
+    participants: [myId, otherId],
+    participantDetails: {
+      [myId]: { username: myUsername, avatar: myAvatar },
+      [otherId]: { username: otherUsername, avatar: otherAvatar },
+    },
+    lastMessage: null,
+    lastMessageAt: serverTimestamp(),
+    unreadCounts: { [myId]: 0, [otherId]: 0 },
+    locationSharingEnabled: false,
+  });
+  return {
+    id: ref.id,
+    type: 'dm',
+    otherUserId: otherId,
+    otherUsername,
+    otherAvatar,
+    lastMessage: undefined,
+    lastMessageAt: new Date().toISOString(),
+    unreadCount: 0,
+    locationSharingEnabled: false,
+  };
 }
 
 // ─── Feed Listener ──────────────────────────────────────────────────────────
