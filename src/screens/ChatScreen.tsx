@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { theme } from '../theme';
 import { Conversation, ChatMessage } from '../types';
-import { getMessages, sendMessage, toggleLocationSharing } from '../data/mockData';
+import { auth, db } from '../firebase';
+import {
+  collection, addDoc, query, orderBy, onSnapshot,
+  doc, updateDoc, serverTimestamp, Timestamp,
+} from 'firebase/firestore';
 import { useUser } from '../context/UserContext';
 import { RootStackParamList } from '../navigation/types';
 
@@ -25,14 +29,41 @@ export default function ChatScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'Chat'>>();
   const conversation = route.params.conversation;
   const { user: loggedInUser } = useUser();
-  const [messages, setMessages] = useState<ChatMessage[]>(() => getMessages(conversation.id));
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [locationOn, setLocationOn] = useState(conversation.locationSharingEnabled ?? false);
   const flatRef = useRef<FlatList>(null);
 
-  const myId = loggedInUser?.email ?? 'user_1';
+  const myId = loggedInUser?.id ?? auth.currentUser?.uid ?? '';
   const myUsername = (loggedInUser?.username ?? 'traveler').replace(/@/g, '');
-  const myAvatar = loggedInUser?.avatarUri ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80';
+  const myAvatar = loggedInUser?.avatarUri ?? '';
+
+  // Load messages in real time
+  useEffect(() => {
+    const q = query(
+      collection(db, 'conversations', conversation.id, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const msgs: ChatMessage[] = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          conversationId: conversation.id,
+          senderId: data.senderId,
+          senderUsername: data.senderUsername,
+          senderAvatar: data.senderAvatar ?? '',
+          text: data.text,
+          createdAt: data.createdAt instanceof Timestamp
+            ? data.createdAt.toDate().toISOString()
+            : new Date().toISOString(),
+        } as ChatMessage;
+      });
+      setMessages(msgs);
+      setTimeout(() => flatRef.current?.scrollToEnd({ animated: false }), 50);
+    }, () => {});
+    return () => unsub();
+  }, [conversation.id]);
 
   const title = conversation.type === 'dm'
     ? `@${conversation.otherUsername}`
@@ -42,18 +73,31 @@ export default function ChatScreen() {
     ? `${conversation.locationSharingEnabled ? '📍 Location sharing ON' : 'Group chat'}`
     : 'Direct Message';
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const text = inputText.trim();
-    if (!text) return;
-    const msg = sendMessage(conversation.id, text, { id: myId, username: myUsername, avatar: myAvatar });
-    setMessages((prev) => [...prev, msg]);
+    if (!text || !myId) return;
     setInputText('');
-    setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
+    const messagesRef = collection(db, 'conversations', conversation.id, 'messages');
+    await addDoc(messagesRef, {
+      senderId: myId,
+      senderUsername: myUsername,
+      senderAvatar: myAvatar,
+      text,
+      createdAt: serverTimestamp(),
+    });
+    // Update conversation metadata
+    await updateDoc(doc(db, 'conversations', conversation.id), {
+      lastMessage: text,
+      lastMessageAt: serverTimestamp(),
+    }).catch(() => {});
   };
 
-  const handleToggleLocation = () => {
-    toggleLocationSharing(conversation.id);
-    setLocationOn((prev) => !prev);
+  const handleToggleLocation = async () => {
+    const next = !locationOn;
+    setLocationOn(next);
+    await updateDoc(doc(db, 'conversations', conversation.id), {
+      locationSharingEnabled: next,
+    }).catch(() => {});
   };
 
   const formatTime = (iso: string) => {
@@ -62,7 +106,7 @@ export default function ChatScreen() {
   };
 
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
-    const isMe = item.senderId === myId || item.senderId === 'user_1';
+    const isMe = item.senderId === myId;
     const prevItem = messages[index - 1];
     const showAvatar = !isMe && (!prevItem || prevItem.senderId !== item.senderId);
 

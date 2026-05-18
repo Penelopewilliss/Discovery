@@ -18,7 +18,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { theme } from '../theme';
-import { addPost, mockPlaces } from '../data/mockData';
 import { uploadPostMedia, createPostInFirestore } from '../services/postsService';
 import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem } from '../types';
 import GlassCard from '../components/GlassCard';
@@ -265,7 +264,7 @@ export default function CreatePostScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {/* Header */}
         <View style={styles.header}>

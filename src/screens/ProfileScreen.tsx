@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,21 +19,19 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import LeafletMapView from '../components/LeafletMapView';
-import TripShareSheet from '../components/TripShareSheet';
-import LiveTripSummarySheet from '../components/LiveTripSummarySheet';
-import CreateTripModal from '../components/CreateTripModal';
+
+
 
 const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
-import { mockUser, mockStamps, mockPosts, mockFollowers, mockFollowing } from '../data/mockData';
-import { auth } from '../firebase';
+import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { doc, getDoc, updateDoc, getDocs, collection, query, where, documentId } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import GlassCard from '../components/GlassCard';
-import { useUser, Trip, CompletedLiveTrip } from '../context/UserContext';
+import { useUser } from '../context/UserContext';
 import { useNavigation } from '@react-navigation/native';
-import { PostDelay } from '../types';
+import { PostDelay, Stamp, Post } from '../types';
 
 const ALL_COUNTRIES: { name: string; emoji: string }[] = [
   { name: 'Albania', emoji: '🇦🇱' }, { name: 'Argentina', emoji: '🇦🇷' },
@@ -83,21 +81,17 @@ const BADGE_COLORS = [
 ];
 
 export default function ProfileScreen() {
-  const { user: loggedInUser, setUser, visitedPlaces, trips, deleteTrip, completedLiveTrips, deleteCompletedTrip } = useUser();
+  const { user: loggedInUser, setUser } = useUser();
   const navigation = useNavigation();
-  const [reviewingTrip, setReviewingTrip] = useState<CompletedLiveTrip | null>(null);
-  const [showCreateTrip, setShowCreateTrip] = useState(false);
-  const [sharingTrip, setSharingTrip] = useState<Trip | null>(null);
-  const user = mockUser;
-  const [privateProfile, setPrivateProfile] = useState(user.privateProfile);
-  const [hideLocation, setHideLocation] = useState(user.hideExactLocation);
-  const [defaultDelay, setDefaultDelay] = useState<PostDelay>(user.defaultDelayedPosting);
+  const [privateProfile, setPrivateProfile] = useState(false);
+  const [hideLocation, setHideLocation] = useState(true);
+  const [allowStoryShares, setAllowStoryShares] = useState(true);
+  const [defaultDelay, setDefaultDelay] = useState<PostDelay>('24h');
   const [showDelayPicker, setShowDelayPicker] = useState(false);
   const [showFollowersList, setShowFollowersList] = useState(false);
   const [showFollowingList, setShowFollowingList] = useState(false);
-  const [selectedSavedPost, setSelectedSavedPost] = useState<typeof savedPosts[0] | null>(null);
-  const [showTravelMap, setShowTravelMap] = useState(false);
-  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
+  const [selectedSavedPost, setSelectedSavedPost] = useState<Post | null>(null);
+
 
   const handleLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -109,6 +103,13 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handleInvite = () => {
+    Share.share({
+      message: `Join me on HiddenGems — the travel app for discovering hidden gems and sharing real travel memories! Download Expo Go and scan my link to try it: https://expo.dev/@penelope11/hiddengems`,
+      title: 'Join me on HiddenGems',
+    }).catch(() => {});
   };
 
   const handleForgotPassword = () => {
@@ -143,10 +144,75 @@ export default function ProfileScreen() {
   const [editBio, setEditBio] = useState(loggedInUser?.bio ?? '');
   const [editAvatar, setEditAvatar] = useState(loggedInUser?.avatarUri ?? null);
 
-  // Countries
-  const [stamps, setStamps] = useState(() => [...mockStamps]);
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
-  const [countrySearch, setCountrySearch] = useState('');
+  // Countries — loaded for profile stats row
+  const [stamps, setStamps] = useState<Stamp[]>([]);
+
+  // Followers / Following
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followers, setFollowers] = useState<Array<{ id: string; username: string; avatar: string | null }>>([]);
+  const [following, setFollowing] = useState<Array<{ id: string; username: string; avatar: string | null }>>([]);
+
+  // Saved posts
+  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
+
+  // Load data from Firestore on mount
+  useEffect(() => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
+    const uid = firebaseUser.uid;
+
+    // Load stamps and saved posts from user doc
+    getDoc(doc(db, 'users', uid)).then(async (snap) => {
+      const data = snap.data() ?? {};
+      if (Array.isArray(data.stamps)) setStamps(data.stamps as Stamp[]);
+      if (data.privateProfile !== undefined) setPrivateProfile(data.privateProfile);
+      if (data.hideExactLocation !== undefined) setHideLocation(data.hideExactLocation);
+      if (data.allowStoryShares !== undefined) setAllowStoryShares(data.allowStoryShares);
+      const savedPostIds: string[] = data.savedPostIds ?? [];
+      if (savedPostIds.length > 0) {
+        const ids = savedPostIds.slice(0, 10);
+        getDocs(query(collection(db, 'posts'), where(documentId(), 'in', ids))).then((postsSnap) => {
+          setSavedPosts(postsSnap.docs.map((d) => {
+            const pd = d.data();
+            return {
+              id: d.id, userId: pd.userId ?? '', username: pd.username ?? '',
+              userAvatar: pd.userAvatar ?? '', imageUrl: pd.mediaItems?.[0]?.uri ?? pd.imageUrl ?? '',
+              mediaItems: pd.mediaItems ?? [], caption: pd.caption ?? '',
+              locationArea: pd.locationArea ?? '', destination: pd.destination ?? '',
+              tags: pd.tags ?? [], mood: pd.mood ?? 'wanderlust',
+              likes: pd.likesCount ?? 0, comments: pd.commentsCount ?? 0,
+              delay: pd.delay ?? 'now', privacy: pd.privacy ?? 'public',
+              hideExactLocation: pd.hideExactLocation ?? false, blurLocation: pd.blurLocation ?? false,
+              hideStayLocation: pd.hideStayLocation ?? false,
+              createdAt: pd.createdAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+              liked: false, saved: true, reactions: pd.reactions ?? {}, userReaction: null,
+              reactionsEnabled: pd.reactionsEnabled ?? true,
+            } as Post;
+          }));
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Load follower / following counts
+    getDocs(query(collection(db, 'follows'), where('followeeId', '==', uid))).then((snap) => {
+      setFollowerCount(snap.size);
+      setFollowers(snap.docs.map((d) => ({
+        id: d.data().followerId as string,
+        username: (d.data().followerUsername as string) ?? 'traveller',
+        avatar: (d.data().followerAvatar as string | null) ?? null,
+      })));
+    }).catch(() => {});
+
+    getDocs(query(collection(db, 'follows'), where('followerId', '==', uid))).then((snap) => {
+      setFollowingCount(snap.size);
+      setFollowing(snap.docs.map((d) => ({
+        id: d.data().followeeId as string,
+        username: (d.data().followeeUsername as string) ?? 'traveller',
+        avatar: (d.data().followeeAvatar as string | null) ?? null,
+      })));
+    }).catch(() => {});
+  }, []);
 
   const displayName = loggedInUser?.name || '';
   const rawUsername = loggedInUser?.username || '';
@@ -196,28 +262,50 @@ export default function ProfileScreen() {
   };
 
   const saveProfile = async () => {
+    const firebaseUser = auth.currentUser;
+    let finalAvatarUri = editAvatar;
+
+    // Upload new avatar to Firebase Storage if it's a local URI
+    if (editAvatar && !editAvatar.startsWith('http') && firebaseUser) {
+      try {
+        const response = await fetch(editAvatar);
+        const blob = await response.blob();
+        const avatarRef = ref(storage, `avatars/${firebaseUser.uid}/avatar.jpg`);
+        await uploadBytes(avatarRef, blob);
+        finalAvatarUri = await getDownloadURL(avatarRef);
+      } catch (_) {}
+    }
+
     const updated = {
+      id: firebaseUser?.uid ?? loggedInUser?.id ?? '',
       name: editUsername.trim().replace(/@/g, '') || username,
       username: editUsername.trim().replace(/@/g, '') || username,
       email: loggedInUser?.email ?? '',
       bio: editBio.trim(),
-      avatarUri: editAvatar,
+      avatarUri: finalAvatarUri,
       homeCountry: loggedInUser?.homeCountry ?? '',
       interests: loggedInUser?.interests ?? [],
     };
     setUser(updated);
-    try {
-      await AsyncStorage.setItem('@travlora_user', JSON.stringify(updated));
-    } catch (_) {}
+    if (firebaseUser) {
+      try {
+        await updateDoc(doc(db, 'users', firebaseUser.uid), {
+          name: updated.name,
+          username: updated.username,
+          bio: updated.bio,
+          avatarUri: updated.avatarUri,
+        });
+      } catch (_) {}
+    }
     setShowEdit(false);
   };
 
-  const savedPosts = mockPosts.filter((p) => user.savedPosts.includes(p.id));
+
 
   // ── Edit Profile view ──────────────────────────────────────────────────────
   if (showEdit) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={{ flex: 1 }}
@@ -291,7 +379,7 @@ export default function ProfileScreen() {
 
   // ── Normal profile view ────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <ScrollView showsVerticalScrollIndicator={false}>
 
         {/* Hero / Avatar */}
@@ -330,12 +418,12 @@ export default function ProfileScreen() {
           <View style={styles.statsBlock}>
             <View style={styles.statsRow}>
               <TouchableOpacity style={styles.stat} onPress={() => setShowFollowersList(true)}>
-                <Text style={styles.statValue}>{mockFollowers.length}</Text>
+                <Text style={styles.statValue}>{followerCount}</Text>
                 <Text style={styles.statLabel}>Followers</Text>
               </TouchableOpacity>
               <View style={styles.statDivider} />
               <TouchableOpacity style={styles.stat} onPress={() => setShowFollowingList(true)}>
-                <Text style={styles.statValue}>{mockFollowing.length}</Text>
+                <Text style={styles.statValue}>{followingCount}</Text>
                 <Text style={styles.statLabel}>Following</Text>
               </TouchableOpacity>
             </View>
@@ -356,7 +444,7 @@ export default function ProfileScreen() {
           <View style={styles.badgesSection}>
             <Text style={styles.sectionTitle}>Travel Style</Text>
             <View style={styles.badgeRow}>
-              {user.travelStyleBadges.map((badge, i) => (
+              {(loggedInUser?.interests ?? []).map((badge, i) => (
                 <LinearGradient
                   key={badge}
                   colors={BADGE_COLORS[i % BADGE_COLORS.length] as [string, string]}
@@ -370,279 +458,19 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Travel Passport */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>✈️ Travel Passport</Text>
-            <TouchableOpacity onPress={() => { setCountrySearch(''); setShowCountryPicker(true); }} style={styles.addCountryBtn}>
-              <Text style={styles.addCountryBtnText}>+ Add Country</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Travel Passport — open the 🛂 Passport tab for full details */}
           <GlassCard style={styles.passportCard}>
-            <Text style={styles.passportHeader}>Visited Countries</Text>
-            {stamps.length === 0 && (
-              <Text style={styles.noCountriesText}>Tap "+ Add Country" to log your travels 🌍</Text>
-            )}
-            <View style={styles.stampsGrid}>
-              {stamps.map((stamp) => (
-                <TouchableOpacity
-                  key={stamp.country}
-                  style={styles.stamp}
-                  onLongPress={() => {
-                    Alert.alert('Remove country', `Remove ${stamp.country}?`, [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Remove', style: 'destructive', onPress: () => setStamps((prev) => prev.filter((s) => s.country !== stamp.country)) },
-                    ]);
-                  }}
-                >
-                  <Text style={styles.stampEmoji}>{stamp.emoji}</Text>
-                  <Text style={styles.stampCountry}>{stamp.country}</Text>
-                  <Text style={styles.stampDate}>{stamp.visitedAt}</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={{ fontSize: 32 }}>🛂</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Travel Passport</Text>
+                <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginTop: 3 }}>
+                  {stamps.length} countr{stamps.length !== 1 ? 'ies' : 'y'} visited — open the Passport tab for your map, trips & countries
+                </Text>
+              </View>
+              <Text style={{ color: theme.colors.primary, fontSize: 24 }}>›</Text>
             </View>
           </GlassCard>
-
-          {/* My Travel Map */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>🗺️ My Travel Map</Text>
-            {visitedPlaces.length > 0 && (
-              <TouchableOpacity
-                onPress={async () => {
-                  const names = visitedPlaces.map((p) => p.country ? `${p.name}, ${p.country}` : p.name).join('  ·  ');
-                  await Share.share({
-                    message: `Places I've visited on Discovery:\n${names}\n\nDownload Discovery to build yours! 🌍`,
-                    title: 'My Discovery Travel Map',
-                  });
-                }}
-                style={styles.addCountryBtn}
-              >
-                <Text style={styles.addCountryBtnText}>Share 🔗</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <TouchableOpacity onPress={() => setShowTravelMap(true)} activeOpacity={0.85}>
-            <GlassCard style={styles.travelMapPreview}>
-              {visitedPlaces.length === 0 ? (
-                <View style={styles.travelMapEmpty}>
-                  <Text style={styles.travelMapEmptyEmoji}>🌍</Text>
-                  <Text style={styles.travelMapEmptyTitle}>No places visited yet</Text>
-                  <Text style={styles.travelMapEmptySub}>
-                    Drop a pin on the map, tag a place in a post, or drop stops on a live trip to start building your collection.
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.travelMapStatsRow}>
-                    <View style={styles.travelMapStat}>
-                      <Text style={styles.travelMapStatNum}>{visitedPlaces.length}</Text>
-                      <Text style={styles.travelMapStatLabel}>Places</Text>
-                    </View>
-                    <View style={styles.travelMapStat}>
-                      <Text style={styles.travelMapStatNum}>
-                        {new Set(visitedPlaces.map((p) => p.country)).size}
-                      </Text>
-                      <Text style={styles.travelMapStatLabel}>Countries</Text>
-                    </View>
-                    <View style={styles.travelMapStat}>
-                      <Text style={styles.travelMapStatNum}>
-                        {new Set(visitedPlaces.map((p) => p.visitedAt.slice(0, 4))).size}
-                      </Text>
-                      <Text style={styles.travelMapStatLabel}>Years</Text>
-                    </View>
-                  </View>
-                  {/* place list hidden — visible in full map */}
-                  <Text style={styles.travelMapTap}>Tap to open full map →</Text>
-                </>
-              )}
-            </GlassCard>
-          </TouchableOpacity>
-
-          {/* ═══ My Trips ═══ */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>🔴 My Trips</Text>
-            <TouchableOpacity onPress={() => setShowCreateTrip(true)} style={styles.addTripBtn}>
-              <Text style={styles.addTripBtnText}>+ Add Trip</Text>
-            </TouchableOpacity>
-          </View>
-          {completedLiveTrips.length === 0 ? (
-            <GlassCard style={styles.tripsEmptyCard}>
-              <Text style={styles.tripsEmptyEmoji}>🗺️</Text>
-              <Text style={styles.tripsEmptyTitle}>No live trips yet</Text>
-              <Text style={styles.tripsEmptySub}>
-                Go to Explore → tap "🔴 Go Live" to start your first road trip.
-              </Text>
-            </GlassCard>
-          ) : (
-            completedLiveTrips.map((trip) => {
-              const durationMs = trip.endedAt - trip.startedAt;
-              const hours = Math.floor(durationMs / 3_600_000);
-              const mins = Math.floor((durationMs % 3_600_000) / 60_000);
-              const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-              const photos = trip.pins.filter((p) => p.photoUri);
-              const date = new Date(trip.endedAt).toLocaleDateString(undefined, {
-                day: 'numeric', month: 'short', year: 'numeric',
-              });
-              return (
-                <TouchableOpacity
-                  key={trip.id}
-                  activeOpacity={0.85}
-                  onPress={() => setReviewingTrip(trip)}
-                >
-                  <GlassCard style={styles.liveTripCard}>
-                    <View style={styles.liveTripCardHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.liveTripCardName}>{trip.name}</Text>
-                        <Text style={styles.liveTripCardMeta}>
-                          {date} · {trip.pins.length} stop{trip.pins.length !== 1 ? 's' : ''} · {durationStr} · {photos.length} photo{photos.length !== 1 ? 's' : ''}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() =>
-                          Alert.alert('Delete trip?', `Remove "${trip.name}" from your history?`, [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Delete', style: 'destructive', onPress: () => deleteCompletedTrip(trip.id) },
-                          ])
-                        }
-                        style={styles.tripCardDelete}
-                      >
-                        <Text style={{ color: theme.colors.textMuted, fontSize: 18 }}>⋮</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {/* Photo thumbnail strip */}
-                    {photos.length > 0 && (
-                      <View style={styles.liveTripPhotoRow}>
-                        {photos.slice(0, 4).map((pin, i) => (
-                          <Image
-                            key={pin.id}
-                            source={{ uri: pin.photoUri! }}
-                            style={[styles.liveTripThumb, i > 0 && { marginLeft: 6 }]}
-                            resizeMode="cover"
-                          />
-                        ))}
-                        {photos.length > 4 && (
-                          <View style={[styles.liveTripThumb, styles.liveTripThumbMore, { marginLeft: 6 }]}>
-                            <Text style={styles.liveTripThumbMoreText}>+{photos.length - 4}</Text>
-                          </View>
-                        )}
-                      </View>
-                    )}
-                    {/* Stop names */}
-                    <Text style={styles.liveTripStops} numberOfLines={1}>
-                      {trip.pins.map((p) => p.placeName).join('  →  ')}
-                    </Text>
-                    <Text style={styles.liveTripTap}>Tap to view map + photos →</Text>
-                  </GlassCard>
-                </TouchableOpacity>
-              );
-            })
-          )}
-
-          {/* My Planned Trips — planned journeys */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>✈️ My Planned Trips</Text>
-          </View>
-          {trips.length === 0 ? (
-            <GlassCard style={styles.tripsEmptyCard}>
-              <Text style={styles.tripsEmptyEmoji}>✈️</Text>
-              <Text style={styles.tripsEmptyTitle}>No trips planned yet</Text>
-              <Text style={styles.tripsEmptySub}>
-                Go to Explore → tap the map → press “✈️ Plan Trip” to build your first journey.
-              </Text>
-            </GlassCard>
-          ) : (
-            trips.map((trip) => (
-              <TouchableOpacity key={trip.id} onPress={() => setSelectedTrip(trip)} activeOpacity={0.85}>
-                <GlassCard style={styles.tripCard}>
-                  <View style={styles.tripCardHeader}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.tripCardName}>{trip.name}</Text>
-                      <Text style={styles.tripCardMeta}>
-                        {trip.stops.length} stop{trip.stops.length !== 1 ? 's' : ''} · {new Set(trip.stops.map((s) => s.country)).size} countr{new Set(trip.stops.map((s) => s.country)).size !== 1 ? 'ies' : 'y'}
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => Alert.alert('Delete trip', `Delete “${trip.name}”?`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => deleteTrip(trip.id) },
-                      ])}
-                      style={styles.tripCardDelete}
-                    >
-                      <Text style={{ color: theme.colors.textMuted, fontSize: 18 }}>⋮</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.tripCardRoute}>
-                    {trip.stops.slice(0, 4).map((stop, i) => (
-                      <View key={i} style={styles.tripCardStop}>
-                        {i > 0 && <Text style={styles.tripCardArrow}>→</Text>}
-                        <Text style={styles.tripCardStopName} numberOfLines={1}>{stop.name}</Text>
-                      </View>
-                    ))}
-                    {trip.stops.length > 4 && (
-                      <Text style={styles.tripCardMore}>+{trip.stops.length - 4}</Text>
-                    )}
-                  </View>
-                  <View style={styles.tripCardFooter}>
-                    <Text style={styles.tripCardTap}>Tap to view on map →</Text>
-                    <TouchableOpacity
-                      onPress={(e) => { e.stopPropagation?.(); setSharingTrip(trip); }}
-                      style={styles.tripShareBtn}
-                    >
-                      <Text style={styles.tripShareBtnText}>↗ Share</Text>
-                    </TouchableOpacity>
-                  </View>
-                </GlassCard>
-              </TouchableOpacity>
-            ))
-          )}
-
-          {/* Trip Share Sheet */}
-          <TripShareSheet trip={sharingTrip} onClose={() => setSharingTrip(null)} />
-
-          {/* Country Picker Modal */}
-          <Modal visible={showCountryPicker} animationType="slide" presentationStyle="pageSheet">
-            <View style={styles.pickerModal}>
-              <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>Add Country</Text>
-                <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
-                  <Text style={styles.pickerClose}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.pickerSearch}>
-                <Text style={{ fontSize: 16 }}>🔍</Text>
-                <TextInput
-                  style={styles.pickerSearchInput}
-                  placeholder="Search countries..."
-                  placeholderTextColor={theme.colors.textMuted}
-                  value={countrySearch}
-                  onChangeText={setCountrySearch}
-                  autoFocus
-                />
-              </View>
-              <FlatList
-                data={ALL_COUNTRIES.filter((c) =>
-                  c.name.toLowerCase().includes(countrySearch.toLowerCase()) &&
-                  !stamps.find((s) => s.country === c.name)
-                )}
-                keyExtractor={(item) => item.name}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.pickerItem}
-                    onPress={() => {
-                      const now = new Date();
-                      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                      setStamps((prev) => [...prev, { country: item.name, emoji: item.emoji, visitedAt: month }]);
-                      setShowCountryPicker(false);
-                    }}
-                  >
-                    <Text style={styles.pickerItemEmoji}>{item.emoji}</Text>
-                    <Text style={styles.pickerItemName}>{item.name}</Text>
-                    <Text style={styles.pickerItemAdd}>+</Text>
-                  </TouchableOpacity>
-                )}
-                keyboardShouldPersistTaps="handled"
-              />
-            </View>
-          </Modal>
 
           {/* Saved Posts */}
           {savedPosts.length > 0 && (
@@ -694,6 +522,25 @@ export default function ProfileScreen() {
 
             <View style={[styles.privacyRow, styles.borderTop]}>
               <View style={styles.privacyInfo}>
+                <Text style={styles.privacyLabel}>Allow Story Sharing</Text>
+                <Text style={styles.privacySub}>Let others share your posts to their story</Text>
+              </View>
+              <Switch
+                value={allowStoryShares}
+                onValueChange={async (v) => {
+                  setAllowStoryShares(v);
+                  const uid = auth.currentUser?.uid;
+                  if (uid) {
+                    try { await updateDoc(doc(db, 'users', uid), { allowStoryShares: v }); } catch (_) {}
+                  }
+                }}
+                trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            <View style={[styles.privacyRow, styles.borderTop]}>
+              <View style={styles.privacyInfo}>
                 <Text style={styles.privacyLabel}>Default Posting Delay</Text>
                 <TouchableOpacity onPress={() => setShowDelayPicker((v) => !v)}>
                   <Text style={styles.privacyValue}>{DELAY_LABELS[defaultDelay]} ▾</Text>
@@ -725,7 +572,14 @@ export default function ProfileScreen() {
           {/* Account actions */}
           <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>⚙️ Account</Text>
           <GlassCard style={styles.privacyCard}>
-            <TouchableOpacity style={styles.privacyRow} onPress={handleForgotPassword}>
+            <TouchableOpacity style={styles.privacyRow} onPress={handleInvite}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyLabel}>✉️ Invite Friends</Text>
+                <Text style={styles.privacySub}>Share HiddenGems with people you know</Text>
+              </View>
+              <Text style={{ color: theme.colors.textSecondary }}>›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.privacyRow, styles.borderTop]} onPress={handleForgotPassword}>
               <View style={styles.privacyInfo}>
                 <Text style={styles.privacyLabel}>Reset Password</Text>
                 <Text style={styles.privacySub}>Send a reset link to your email</Text>
@@ -755,19 +609,22 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
           <FlatList
-            data={mockFollowers}
-            keyExtractor={(item) => item}
-            renderItem={({ item, index }) => (
+            data={followers}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
               <View style={styles.userListRow}>
                 <View style={styles.userListAvatar}>
-                  <Text style={{ fontSize: 20 }}>👤</Text>
+                  {item.avatar
+                    ? <Image source={{ uri: item.avatar }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                    : <Text style={{ fontSize: 20 }}>👤</Text>}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.userListName}>Traveller {index + 1}</Text>
-                  <Text style={styles.userListHandle}>@traveller_{item.slice(-1)}</Text>
+                  <Text style={styles.userListName}>{item.username}</Text>
+                  <Text style={styles.userListHandle}>@{item.username}</Text>
                 </View>
               </View>
             )}
+            ListEmptyComponent={<Text style={{ color: theme.colors.textMuted, textAlign: 'center', marginTop: 40 }}>No followers yet</Text>}
           />
         </View>
       </Modal>
@@ -782,19 +639,22 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
           <FlatList
-            data={mockFollowing}
-            keyExtractor={(item) => item}
-            renderItem={({ item, index }) => (
+            data={following}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
               <View style={styles.userListRow}>
                 <View style={styles.userListAvatar}>
-                  <Text style={{ fontSize: 20 }}>👤</Text>
+                  {item.avatar
+                    ? <Image source={{ uri: item.avatar }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                    : <Text style={{ fontSize: 20 }}>👤</Text>}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.userListName}>Traveller {index + 1}</Text>
-                  <Text style={styles.userListHandle}>@traveller_{item.slice(-1)}</Text>
+                  <Text style={styles.userListName}>{item.username}</Text>
+                  <Text style={styles.userListHandle}>@{item.username}</Text>
                 </View>
               </View>
             )}
+            ListEmptyComponent={<Text style={{ color: theme.colors.textMuted, textAlign: 'center', marginTop: 40 }}>No following yet</Text>}
           />
         </View>
       </Modal>
@@ -824,158 +684,6 @@ export default function ProfileScreen() {
         )}
       </Modal>
 
-      {/* My Travel Map Modal */}
-      <Modal visible={showTravelMap} animationType="slide" presentationStyle="fullScreen">
-        <View style={styles.travelMapModal}>
-          {/* Header */}
-          <View style={styles.travelMapHeader}>
-            <View>
-              <Text style={styles.travelMapTitle}>🗺️ My Travel Map</Text>
-              <Text style={styles.travelMapSubtitle}>
-                {visitedPlaces.length} places · {new Set(visitedPlaces.map((p) => p.country)).size} countries
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setShowTravelMap(false)}
-              style={styles.travelMapCloseBtn}
-            >
-              <Text style={styles.travelMapClose}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Map */}
-          {visitedPlaces.length === 0 ? (
-            <View style={styles.travelMapEmptyFull}>
-              <Text style={{ fontSize: 64 }}>🌍</Text>
-              <Text style={styles.travelMapEmptyTitle}>No places yet</Text>
-              <Text style={styles.travelMapEmptySub}>
-                Go to Explore, open a destination and tap{'\n'}"📍 I've been here!" to add it here.
-              </Text>
-            </View>
-          ) : (
-            <LeafletMapView
-              style={{ flex: 1, width: SCREEN.width }}
-              region={{
-                latitude: visitedPlaces[0].lat,
-                longitude: visitedPlaces[0].lon,
-                latitudeDelta: 60,
-                longitudeDelta: 80,
-              }}
-              markers={visitedPlaces.map((place, i) => ({
-                id: place.id,
-                latitude: place.lat,
-                longitude: place.lon,
-                color: '#22c55e',
-                label: place.name,
-                sublabel: `${place.country} · Stop #${i + 1}`,
-              }))}
-              polylineCoords={visitedPlaces.map((p) => ({ latitude: p.lat, longitude: p.lon }))}
-              polylineColor={theme.colors.primary}
-            />
-          )}
-
-          {/* Bottom strip — journey list */}
-          {visitedPlaces.length > 0 && (
-            <View style={styles.travelMapBottomStrip}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: theme.spacing.sm }}>
-                {visitedPlaces.map((place, i) => (
-                  <View key={place.id} style={styles.travelMapStopChip}>
-                    <Text style={styles.travelMapStopNum}>{i + 1}</Text>
-                    <Text style={styles.travelMapStopName} numberOfLines={1}>{place.name}</Text>
-                    <Text style={styles.travelMapStopCountry} numberOfLines={1}>{place.country || 'Pinned location'}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-              <TouchableOpacity
-                style={styles.travelMapShareBtn}
-                onPress={async () => {
-                  const names = visitedPlaces.map((p, i) => `${i + 1}. ${p.name}${p.country ? ', ' + p.country : ''}`).join('\n');
-                  await Share.share({
-                    message: `🗺️ My travel journey on Discovery:\n\n${names}\n\nDiscover yours at discoveryapp.com 🌍`,
-                    title: 'My Discovery Travel Map',
-                  });
-                }}
-              >
-                <Text style={styles.travelMapShareBtnText}>📤 Share My Journey</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </Modal>
-
-      {/* ═══ Trip Detail Modal ═══ */}
-      <Modal visible={selectedTrip !== null} animationType="slide" presentationStyle="fullScreen">
-        {selectedTrip && (
-          <View style={styles.tripDetailModal}>
-            <View style={styles.tripModalHeader}>
-              <TouchableOpacity onPress={() => setSelectedTrip(null)}>
-                <Text style={styles.tripModalClose}>✕ Close</Text>
-              </TouchableOpacity>
-              <Text style={styles.tripModalName} numberOfLines={1}>{selectedTrip.name}</Text>
-              <TouchableOpacity
-                onPress={async () => {
-                  const stops = selectedTrip.stops.map((s, i) => `${i + 1}. ${s.name}, ${s.country}`).join('\n');
-                  await Share.share({
-                    message: `✈️ ${selectedTrip.name}\n\nMy planned route:\n${stops}\n\nPlanning with Discovery 🌍`,
-                  });
-                }}
-              >
-                <Text style={styles.tripModalShare}>📤</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Map with route */}
-            <View style={{ height: 300 }}>
-              <LeafletMapView
-                style={{ flex: 1 }}
-                region={{
-                  latitude: selectedTrip.stops[0]?.lat ?? 20,
-                  longitude: selectedTrip.stops[0]?.lon ?? 10,
-                  latitudeDelta: 60,
-                  longitudeDelta: 70,
-                }}
-                markers={selectedTrip.stops.map((stop, i) => ({
-                  id: String(i),
-                  latitude: stop.lat,
-                  longitude: stop.lon,
-                  color: '#6366f1',
-                  label: `${i + 1}. ${stop.name}`,
-                }))}
-                polylineCoords={selectedTrip.stops.map((s) => ({ latitude: s.lat, longitude: s.lon }))}
-                polylineColor={theme.colors.primary}
-              />
-            </View>
-
-            {/* Stop list */}
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: theme.spacing.md }}>
-              <Text style={styles.tripDetailStopsLabel}>
-                {selectedTrip.stops.length} stop{selectedTrip.stops.length !== 1 ? 's' : ''}
-              </Text>
-              {selectedTrip.stops.map((stop, i) => (
-                <View key={i} style={styles.tripDetailStopRow}>
-                  <View style={styles.tripDetailBadge}>
-                    <Text style={styles.tripDetailBadgeText}>{i + 1}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tripDetailStopName}>{stop.name}</Text>
-                    <Text style={styles.tripDetailStopCountry}>{stop.country}</Text>
-                  </View>
-                </View>
-              ))}
-              <View style={{ height: 40 }} />
-            </ScrollView>
-          </View>
-        )}
-      </Modal>
-      {reviewingTrip && (
-        <LiveTripSummarySheet
-          trip={reviewingTrip}
-          mode="view"
-          onClose={() => setReviewingTrip(null)}
-          onEnd={() => setReviewingTrip(null)}
-        />
-      )}
-      <CreateTripModal visible={showCreateTrip} onClose={() => setShowCreateTrip(false)} />
     </SafeAreaView>
   );
 }
@@ -1578,7 +1286,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    paddingBottom: 24,
+    paddingBottom: 100,
   },
   travelMapStopChip: {
     backgroundColor: theme.colors.glass,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,17 +13,63 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { theme } from '../theme';
 import { Conversation } from '../types';
-import { mockConversations } from '../data/mockData';
+import { auth, db } from '../firebase';
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { RootStackParamList } from '../navigation/types';
 
 export default function MessagesScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const q = query(
+      collection(db, 'conversations'),
+      where('participants', 'array-contains', uid),
+      orderBy('lastMessageAt', 'desc')
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const convs: Conversation[] = snap.docs.map((d) => {
+        const data = d.data();
+        const unreadCounts: Record<string, number> = data.unreadCounts ?? {};
+        // For DMs, find the other participant
+        const otherUserId = (data.participants as string[]).find((p: string) => p !== uid);
+        const details: Record<string, { username: string; avatar: string | null }> =
+          data.participantDetails ?? {};
+        return {
+          id: d.id,
+          type: data.type ?? 'dm',
+          otherUserId,
+          otherUsername: otherUserId ? (details[otherUserId]?.username ?? 'traveller') : undefined,
+          otherAvatar: otherUserId ? (details[otherUserId]?.avatar ?? null) : undefined,
+          groupId: data.groupId,
+          groupName: data.groupName,
+          groupCover: data.groupCover,
+          locationSharingEnabled: data.locationSharingEnabled ?? false,
+          lastMessage: data.lastMessage,
+          lastMessageAt: data.lastMessageAt instanceof Timestamp
+            ? data.lastMessageAt.toDate().toISOString()
+            : data.lastMessageAt,
+          unreadCount: unreadCounts[uid] ?? 0,
+        } as Conversation;
+      });
+      setConversations(convs);
+    }, () => {});
+    return () => unsub();
+  }, []);
 
   const openConv = (conv: Conversation) => {
+    const uid = auth.currentUser?.uid;
     setConversations((prev) =>
       prev.map((c) => (c.id === conv.id ? { ...c, unreadCount: 0 } : c))
     );
+    // Reset unread count in Firestore
+    if (uid) {
+      updateDoc(doc(db, 'conversations', conv.id), {
+        [`unreadCounts.${uid}`]: 0,
+      }).catch(() => {});
+    }
     navigation.navigate('Chat', { conversation: { ...conv, unreadCount: 0 } });
   };
 
@@ -88,7 +134,7 @@ export default function MessagesScreen() {
   const groups = conversations.filter((c) => c.type === 'group');
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <View style={styles.header}>
         <Text style={styles.title}>Messages</Text>
         <Text style={styles.subtitle}>DMs & group chats</Text>
@@ -151,7 +197,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   list: {
-    paddingBottom: theme.spacing.xxl,
+    paddingBottom: 100,
   },
   sectionLabel: {
     color: theme.colors.textMuted,

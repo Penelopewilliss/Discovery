@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Dimensions,
   Share,
+  Alert,
   Modal,
   TextInput,
   FlatList,
@@ -21,12 +22,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Post, PostDelay, Comment, MediaItem } from '../types';
 import { theme } from '../theme';
-import { toggleFollowUser, isFollowing } from '../data/mockData';
 import {
   likePost, unlikePost, savePost, unsavePost,
   addCommentToFirestore, loadComments, setReaction,
+  followUser, unfollowUser, checkFollowing, saveStory,
 } from '../services/postsService';
 import { useUser } from '../context/UserContext';
+import { db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
@@ -60,7 +63,7 @@ interface PostCardProps {
 export default function PostCard({ post, onUpdate }: PostCardProps) {
   const { user: loggedInUser } = useUser();
   const isOwnPost = post.userId === loggedInUser?.id || post.userId === 'user_1';
-  const [following, setFollowing] = useState(() => isFollowing(post.userId));
+  const [following, setFollowing] = useState(false);
   const [liked, setLiked] = useState(post.liked);
   const [saved, setSaved] = useState(post.saved);
   const [likes, setLikes] = useState(post.likes);
@@ -76,6 +79,12 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
   const lastTapRef = useRef<number>(0);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [cardWidth, setCardWidth] = useState(0);
+
+  // Check following state from Firestore
+  useEffect(() => {
+    if (!loggedInUser?.id || isOwnPost) return;
+    checkFollowing(loggedInUser.id, post.userId).then(setFollowing).catch(() => {});
+  }, [loggedInUser?.id, post.userId, isOwnPost]);
 
   // Load comments when section is opened
   useEffect(() => {
@@ -128,13 +137,57 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
     }
   };
 
-  const handleShare = async () => {
+  const handleShareExternal = async () => {
     try {
       await Share.share({
         message: `Check out this travel post on HiddenGems!\n\n"${post.caption}"\n\n📍 ${post.locationArea}`,
         title: 'HiddenGems',
       });
     } catch (_) {}
+  };
+
+  const handleShareToStory = async () => {
+    if (!loggedInUser?.id) return;
+    // For others' posts, check if they allow story shares
+    if (!isOwnPost) {
+      try {
+        const ownerSnap = await getDoc(doc(db, 'users', post.userId));
+        const ownerData = ownerSnap.data() ?? {};
+        if (ownerData.allowStoryShares === false) {
+          Alert.alert("Can't share", `@${post.username} hasn't enabled story sharing for their posts.`);
+          return;
+        }
+      } catch (_) {}
+    }
+    const imageUri = post.mediaItems?.[0]?.uri ?? post.imageUrl ?? null;
+    try {
+      await saveStory({
+        userId: loggedInUser.id,
+        username: loggedInUser.username ?? 'traveler',
+        userAvatar: loggedInUser.avatarUri ?? null,
+        image: imageUri,
+        videoUri: null,
+        overlayText: isOwnPost ? null : `📸 via @${post.username}`,
+        location: post.locationArea || null,
+        music: null,
+        mentions: [],
+      });
+      Alert.alert('Added to Story!', 'The post has been added to your story.');
+    } catch (_) {
+      Alert.alert('Error', 'Could not add to story. Try again.');
+    }
+  };
+
+  const handleShare = () => {
+    Alert.alert(
+      'Share Post',
+      undefined,
+      [
+        { text: 'Add to My Story', onPress: handleShareToStory },
+        { text: 'Share Externally', onPress: handleShareExternal },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
   };
 
   const handleSendComment = async () => {
@@ -183,8 +236,13 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
         {!isOwnPost && (
           <TouchableOpacity
             onPress={() => {
-              toggleFollowUser(post.userId);
-              setFollowing((prev) => !prev);
+              const nowFollowing = !following;
+              setFollowing(nowFollowing);
+              if (loggedInUser?.id) {
+                nowFollowing
+                  ? followUser(loggedInUser.id, loggedInUser.username, loggedInUser.avatarUri, post.userId, post.username)
+                  : unfollowUser(loggedInUser.id, post.userId);
+              }
             }}
             style={[styles.followBtn, following && styles.followingBtn]}
           >
@@ -453,8 +511,13 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
                     <TouchableOpacity
                       style={[styles.profileModalFollowBtn, following && styles.profileModalFollowingBtn]}
                       onPress={() => {
-                        toggleFollowUser(post.userId);
-                        setFollowing((prev) => !prev);
+                        const nowFollowing = !following;
+                        setFollowing(nowFollowing);
+                        if (loggedInUser?.id) {
+                          nowFollowing
+                            ? followUser(loggedInUser.id, loggedInUser.username, loggedInUser.avatarUri, post.userId, post.username)
+                            : unfollowUser(loggedInUser.id, post.userId);
+                        }
                       }}
                     >
                       <Text style={[styles.profileModalFollowText, following && styles.profileModalFollowingText]}>

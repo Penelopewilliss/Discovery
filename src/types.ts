@@ -154,3 +154,23 @@ export interface Stamp {
   emoji: string;
   visitedAt: string;
 }
+
+export interface GroupTripEntry {
+  id: string;
+  type: 'pin' | 'photo';
+  userId: string;
+  username: string;
+  userAvatar: string | null;
+  placeName?: string;
+  note?: string;
+  photoUri?: string;
+  createdAt: string;
+}
+
+export interface GroupTrip {
+  id: string;
+  name: string;
+  createdBy: string;
+  createdAt: string;
+  entryCount: number;
+}

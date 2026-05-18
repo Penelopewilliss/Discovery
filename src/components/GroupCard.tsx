@@ -9,7 +9,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Group } from '../types';
 import { theme } from '../theme';
-import { toggleJoinGroup } from '../data/mockData';
+import { joinGroup, leaveGroup, requestGroup, cancelRequestGroup } from '../services/postsService';
+import { useUser } from '../context/UserContext';
 
 interface GroupCardProps {
   group: Group;
@@ -17,17 +18,30 @@ interface GroupCardProps {
 }
 
 export default function GroupCard({ group, onUpdate }: GroupCardProps) {
+  const { user: loggedInUser } = useUser();
   const [joined, setJoined] = useState(group.joined);
   const [requested, setRequested] = useState(group.requested);
   const [members, setMembers] = useState(group.memberCount);
 
   const handleAction = () => {
-    toggleJoinGroup(group.id);
-    if (group.isPrivate && !joined) {
-      setRequested((prev) => !prev);
+    const uid = loggedInUser?.id;
+    if (!uid) return;
+    if (joined) {
+      setMembers((prev) => prev - 1);
+      setJoined(false);
+      leaveGroup(group.id, uid).catch(() => {});
+    } else if (group.isPrivate) {
+      if (requested) {
+        setRequested(false);
+        cancelRequestGroup(group.id, uid).catch(() => {});
+      } else {
+        setRequested(true);
+        requestGroup(group.id, uid).catch(() => {});
+      }
     } else {
-      setMembers((prev) => (joined ? prev - 1 : prev + 1));
-      setJoined((prev) => !prev);
+      setMembers((prev) => prev + 1);
+      setJoined(true);
+      joinGroup(group.id, uid).catch(() => {});
     }
     onUpdate();
   };

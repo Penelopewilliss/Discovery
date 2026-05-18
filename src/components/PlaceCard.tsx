@@ -10,7 +10,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Place } from '../types';
 import { theme } from '../theme';
-import { toggleFollowPlace } from '../data/mockData';
+import { followPlace, unfollowPlace } from '../services/postsService';
+import { useUser } from '../context/UserContext';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.7;
@@ -21,13 +22,19 @@ interface PlaceCardProps {
 }
 
 export default function PlaceCard({ place, onUpdate }: PlaceCardProps) {
+  const { user: loggedInUser } = useUser();
   const [followed, setFollowed] = useState(place.followed);
   const [followers, setFollowers] = useState(place.followersCount);
 
   const handleFollow = () => {
-    toggleFollowPlace(place.id);
-    setFollowers((prev) => (followed ? prev - 1 : prev + 1));
-    setFollowed((prev) => !prev);
+    const nowFollowed = !followed;
+    setFollowers((prev) => (nowFollowed ? prev + 1 : prev - 1));
+    setFollowed(nowFollowed);
+    if (loggedInUser?.id) {
+      nowFollowed
+        ? followPlace(loggedInUser.id, place.id)
+        : unfollowPlace(loggedInUser.id, place.id);
+    }
     onUpdate();
   };
 

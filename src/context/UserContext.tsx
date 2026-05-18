@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 export type LoggedInUser = {
@@ -138,6 +138,41 @@ const UserContext = createContext<UserContextType>({
   addManualTrip: () => {},
 });
 
+async function autoFollowDemoUsers(uid: string, userData: Record<string, any>) {
+  const username = userData.username ?? '';
+  const avatar = userData.avatar ?? userData.avatarUri ?? null;
+
+  // Find all demo profiles in Firestore
+  const snap = await getDocs(query(collection(db, 'users'), where('isDemo', '==', true)));
+  for (const demoDoc of snap.docs) {
+    const demoId = demoDoc.id;
+    const demoData = demoDoc.data();
+
+    // Current user → demo user
+    await setDoc(doc(db, 'follows', `${uid}_${demoId}`), {
+      followerId: uid,
+      followerUsername: username,
+      followerAvatar: avatar,
+      followeeId: demoId,
+      followeeUsername: demoData.username ?? '',
+      createdAt: serverTimestamp(),
+    }, { merge: true });
+
+    // Demo user → current user (so demo content appears in feed)
+    await setDoc(doc(db, 'follows', `${demoId}_${uid}`), {
+      followerId: demoId,
+      followerUsername: demoData.username ?? '',
+      followerAvatar: demoData.avatar ?? null,
+      followeeId: uid,
+      followeeUsername: username,
+      createdAt: serverTimestamp(),
+    }, { merge: true });
+  }
+
+  // Mark done so this never runs again for this account
+  await updateDoc(doc(db, 'users', uid), { hasAutoFollowedDemoUsers: true });
+}
+
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<LoggedInUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -154,10 +189,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (snap.exists()) {
-          setUser(snap.data() as LoggedInUser);
+          setUser({ id: firebaseUser.uid, ...snap.data() } as LoggedInUser);
+          // Auto-follow demo profiles once per account
+          if (!snap.data().hasAutoFollowedDemoUsers) {
+            autoFollowDemoUsers(firebaseUser.uid, snap.data() as any).catch(() => {});
+          }
         } else {
-          // Firebase Auth session exists but no Firestore profile yet —
-          // build a minimal user so the app stays functional
           setUser({
             id: firebaseUser.uid,
             name: firebaseUser.displayName ?? '',
@@ -169,13 +206,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             interests: [],
           });
         }
+        // Register for push notifications in the background
+        import('../utils/notifications').then(({ registerForPushNotifications }) => {
+          registerForPushNotifications(firebaseUser.uid).catch(() => {});
+        });
       } else {
         setUser(null);
       }
       setAuthLoading(false);
     });
     return unsub;
-  }, [];
+  }, []);
 
   // Load persisted data on mount
   useEffect(() => {

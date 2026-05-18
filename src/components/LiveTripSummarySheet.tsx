@@ -12,7 +12,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 import { LiveTrip } from '../context/UserContext';
-import { addPost } from '../data/mockData';
+import { useUser } from '../context/UserContext';
+import { createPostInFirestore } from '../services/postsService';
 import LeafletMapView, { LMarker, LRegion } from './LeafletMapView';
 
 const STOP_COLORS = ['#6366f1', '#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ec4899', '#14b8a6'];
@@ -71,6 +72,7 @@ export default function LiveTripSummarySheet({
   userAvatar,
   username,
 }: Props) {
+  const { user: loggedInUser } = useUser();
   const markers: LMarker[] = trip.pins.map((pin, i) => ({
     id: pin.id,
     latitude: pin.latitude,
@@ -102,12 +104,13 @@ export default function LiveTripSummarySheet({
       ...photoItems,
     ];
 
-    addPost({
-      id: `live_trip_${Date.now()}`,
-      userId: 'user_1',
-      username: username ?? 'traveler',
+    createPostInFirestore({
+      id: '',
+      userId: loggedInUser?.id ?? '',
+      username: username ?? loggedInUser?.username ?? 'traveler',
       userAvatar:
         userAvatar ??
+        loggedInUser?.avatarUri ??
         'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80',
       imageUrl: staticMapUrl || photoItems[0]?.uri ||
         'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&q=80',

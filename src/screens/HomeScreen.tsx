@@ -22,7 +22,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { theme } from '../theme';
-import { listenToFeed } from '../services/postsService';
+import { listenToFeed, listenToStories, saveStory, uploadStoryMedia, FirestoreStory } from '../services/postsService';
+import { getDocs, query, collection, where } from 'firebase/firestore';
+import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 import PostCard from '../components/PostCard';
 import { PostCardSkeleton } from '../components/SkeletonLoader';
 import { Post, PostDelay } from '../types';
@@ -70,29 +74,9 @@ const PRESET_LOCATIONS = [
   'Paris', 'Rome', 'Santorini', 'Sydney', 'Tokyo',
 ];
 
-const MOCK_ACCOUNTS: Mention[] = [
-  { id: 'user_1', name: 'Aurora Voss',              handle: 'aurora.travels',    type: 'user' },
-  { id: 'user_2', name: 'Lena M\u00fcller',          handle: 'nomad.lena',        type: 'user' },
-  { id: 'user_3', name: 'Kai Chen',                 handle: 'kai.wanderlust',    type: 'user' },
-  { id: 'user_4', name: 'Marco Espinoza',           handle: 'marco.roams',       type: 'user' },
-  { id: 'user_5', name: 'Sofia Andersen',           handle: 'sofia.captures',    type: 'user' },
-  { id: 'biz_1', name: 'The Hidden Bar Amsterdam',  handle: 'hiddenbaram',       type: 'business' },
-  { id: 'biz_2', name: 'Nomad Caf\u00e9 Bali',      handle: 'nomadcafebali',     type: 'business' },
-  { id: 'biz_3', name: 'Rooftop BKK',              handle: 'rooftopbkk',        type: 'business' },
-  { id: 'biz_4', name: 'Sunset Caf\u00e9 Santorini',handle: 'sunsetcafegr',      type: 'business' },
-  { id: 'biz_5', name: 'Secret Garden Lisbon',      handle: 'secretgarden_lx',   type: 'business' },
-  { id: 'biz_6', name: 'Sky Bar Tokyo',             handle: 'skybartokyo',       type: 'business' },
-  { id: 'biz_7', name: 'Hostelworld',               handle: 'hostelworld',       type: 'business' },
-];
 
-const INITIAL_STORIES: Story[] = [
-  { id: 's0', username: 'Your Story', avatar: null, image: null, isOwn: true, isOwnPlaceholder: true, timestamp: '' },
-  { id: 's1', username: 'nomad.lena', avatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&q=80', image: 'https://images.unsplash.com/photo-1506929562872-bb421503ef21?w=800&q=80', isOwn: false, timestamp: '2h' },
-  { id: 's2', username: 'kai.wander', avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&q=80', image: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=800&q=80', isOwn: false, timestamp: '4h' },
-  { id: 's3', username: 'marco.roams', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80', image: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=80', isOwn: false, timestamp: '6h' },
-  { id: 's4', username: 'sofia.cap', avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100&q=80', image: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=800&q=80', isOwn: false, timestamp: '8h' },
-  { id: 's5', username: 'luna.views', avatar: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=100&q=80', image: 'https://images.unsplash.com/photo-1518548419970-58e3b4079ab2?w=800&q=80', isOwn: false, timestamp: '12h' },
-];
+
+const OWN_PLACEHOLDER: Story = { id: 's0', username: 'Your Story', avatar: null, image: null, isOwn: true, isOwnPlaceholder: true, timestamp: '' };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -387,11 +371,13 @@ function formatPlace(displayName: string): { primary: string; secondary: string 
 function StoryEditor({
   imageUri,
   mediaType,
+  suggestedAccounts,
   onDone,
   onCancel,
 }: {
   imageUri: string;
   mediaType: 'photo' | 'video';
+  suggestedAccounts: Mention[];
   onDone: (overlay: StoryOverlay) => void;
   onCancel: () => void;
 }) {
@@ -435,12 +421,12 @@ function StoryEditor({
   }, [locationQuery]);
 
   const filteredAccounts = tagQuery.trim()
-    ? MOCK_ACCOUNTS.filter(
+    ? suggestedAccounts.filter(
         (a) =>
           a.name.toLowerCase().includes(tagQuery.toLowerCase()) ||
           a.handle.toLowerCase().includes(tagQuery.toLowerCase())
       )
-    : MOCK_ACCOUNTS;
+    : suggestedAccounts;
 
   const toggleMention = (account: Mention) =>
     setMentions((prev) =>
@@ -876,8 +862,8 @@ function StoriesBar({
 export default function HomeScreen() {
   const { tripStories, activeLiveTrip, user } = useUser();
   const seenTripStoryIds = useRef(new Set<string>());
-  const [stories, setStories] = useState<Story[]>(INITIAL_STORIES);
-  const [seenIds, setSeenIds] = useState<string[]>(['s3', 's5']);
+  const [stories, setStories] = useState<Story[]>([OWN_PLACEHOLDER]);
+  const [seenIds, setSeenIds] = useState<string[]>([]);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [editorUri, setEditorUri] = useState<string | null>(null);
   const [editorMediaType, setEditorMediaType] = useState<'photo' | 'video'>('photo');
@@ -885,6 +871,7 @@ export default function HomeScreen() {
   const [tick, setTick] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [feedPosts, setFeedPosts] = useState<Post[]>([]);
+  const [suggestedAccounts, setSuggestedAccounts] = useState<Mention[]>([]);
   const storyCounterRef = useRef(0);
 
   const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
@@ -901,6 +888,61 @@ export default function HomeScreen() {
       setIsLoading(false);
     });
     return unsub;
+  }, [user?.id]);
+
+  // Firestore real-time stories (followed users + self)
+  useEffect(() => {
+    if (!user?.id) return;
+    const unsub = listenToStories(user.id, (fsStories: FirestoreStory[]) => {
+      setStories((prev) => {
+        const placeholder = prev.find((s) => s.isOwnPlaceholder) ?? OWN_PLACEHOLDER;
+        // Keep locally-added own stories (own_* ids) that aren't in Firestore yet
+        const localOwn = prev.filter((s) => !s.isOwnPlaceholder && s.isOwn && s.id.startsWith('own_'));
+        // Deduplicate: one bubble per user (most recent story wins; list is already sorted desc)
+        const seen = new Set<string>();
+        const uniqueStories = fsStories.filter((s) => {
+          if (seen.has(s.userId)) return false;
+          seen.add(s.userId);
+          return true;
+        });
+        const remote: Story[] = uniqueStories.map((s) => ({
+          id: s.id,
+          username: s.username,
+          avatar: s.userAvatar,
+          image: s.image,
+          videoUri: s.videoUri,
+          isOwn: s.userId === user.id,
+          isOwnPlaceholder: false,
+          createdAt: s.createdAt,
+          timestamp: '',
+          overlayText: s.overlayText,
+          location: s.location,
+          music: s.music,
+          mentions: s.mentions as Mention[],
+        }));
+        return [placeholder, ...localOwn, ...remote];
+      });
+    });
+    return unsub;
+  }, [user?.id]);
+
+  // Load followed users for mention suggestions in StoryEditor
+  useEffect(() => {
+    if (!user?.id) return;
+    getDocs(query(collection(db, 'follows'), where('followerId', '==', user.id)))
+      .then(async (snap) => {
+        const ids = snap.docs.map((d) => d.data().followeeId as string);
+        if (ids.length === 0) return;
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('__name__', 'in', ids.slice(0, 30))));
+        const accounts: Mention[] = usersSnap.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name ?? d.data().username ?? '',
+          handle: d.data().username ?? '',
+          type: 'user' as const,
+        }));
+        setSuggestedAccounts(accounts);
+      })
+      .catch(() => {});
   }, [user?.id]);
 
   // Inject new trip stories shared from the Trips tab into the stories row
@@ -975,7 +1017,7 @@ export default function HomeScreen() {
   };
 
   const handleEditorDone = (overlay: StoryOverlay) => {
-    if (!editorUri) return;
+    if (!editorUri || !user?.id) return;
 
     const DELAY_MS: Record<PostDelay, number> = {
       now: 0,
@@ -987,17 +1029,20 @@ export default function HomeScreen() {
     };
 
     const delayMs = DELAY_MS[overlay.delay] ?? 0;
+    const localUri = editorUri;
+    const localMediaType = editorMediaType;
 
     storyCounterRef.current += 1;
+    const localId = `own_${storyCounterRef.current}`;
     const newStory: Story = {
-      id: `own_${storyCounterRef.current}`,
-      username: 'aurora.travels',
-      avatar: null,
-      image: editorMediaType === 'photo' ? editorUri : null,
-      videoUri: editorMediaType === 'video' ? editorUri : null,
+      id: localId,
+      username: user.username ?? 'me',
+      avatar: user.avatar ?? null,
+      image: localMediaType === 'photo' ? localUri : null,
+      videoUri: localMediaType === 'video' ? localUri : null,
       isOwn: true,
       isOwnPlaceholder: false,
-      createdAt: Date.now() + delayMs, // expire 18h after it goes live
+      createdAt: Date.now() + delayMs,
       timestamp: '',
       overlayText: overlay.text,
       location: overlay.location,
@@ -1013,6 +1058,23 @@ export default function HomeScreen() {
         return next;
       });
       setViewerIndex(0);
+
+      // Upload media + persist to Firestore in background
+      uploadStoryMedia(user!.id, localUri, localMediaType)
+        .then((remoteUrl) =>
+          saveStory({
+            userId: user!.id,
+            username: user!.username ?? 'me',
+            userAvatar: user!.avatar ?? null,
+            image: localMediaType === 'photo' ? remoteUrl : null,
+            videoUri: localMediaType === 'video' ? remoteUrl : null,
+            overlayText: overlay.text,
+            location: overlay.location,
+            music: overlay.music,
+            mentions: overlay.mentions,
+          })
+        )
+        .catch(() => {}); // Fail silently — local story already visible
     };
 
     setEditorUri(null);
@@ -1039,7 +1101,7 @@ export default function HomeScreen() {
   const viewableStories = stories.filter((s) => !s.isOwnPlaceholder);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <FlatList
         data={isLoading ? [] : filtered}
         keyExtractor={(item) => item.id + tick.toString()}
@@ -1122,6 +1184,7 @@ export default function HomeScreen() {
           <StoryEditor
             imageUri={editorUri}
             mediaType={editorMediaType}
+            suggestedAccounts={suggestedAccounts}
             onDone={handleEditorDone}
             onCancel={() => setEditorUri(null)}
           />
@@ -1138,36 +1201,36 @@ const styles = StyleSheet.create({
   },
   storiesList: {
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: 6,
     gap: theme.spacing.md,
   },
-  storyItem: { alignItems: 'center', width: 68 },
+  storyItem: { alignItems: 'center', width: 52 },
   storyRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 2,
   },
   ownStoryRing: { borderWidth: 2, borderColor: theme.colors.border },
   storyAvatarWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: theme.colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  storyAvatar: { width: 58, height: 58, borderRadius: 29 },
-  addStoryPlus: { fontSize: 26, color: theme.colors.textMuted, fontWeight: '300' },
+  storyAvatar: { width: 42, height: 42, borderRadius: 21 },
+  addStoryPlus: { fontSize: 20, color: theme.colors.textMuted, fontWeight: '300' },
   storyName: {
     color: theme.colors.text,
-    fontSize: 10,
-    marginTop: 6,
+    fontSize: 9,
+    marginTop: 4,
     textAlign: 'center',
-    width: 68,
+    width: 52,
   },
   storyNameSeen: { color: theme.colors.textMuted },
   // Live trip LIVE badge under the bubble
@@ -1209,8 +1272,8 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   feed: {
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xl,
+    paddingTop: 4,
+    paddingBottom: 100,
   },
   empty: {
     alignItems: 'center',

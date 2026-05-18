@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,21 +13,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { mockPosts, mockPlaces, mockUser } from '../data/mockData';
+import { mockPlaces } from '../data/mockData';
 import { Place, Post } from '../types';
+import { auth, db } from '../firebase';
+import { collection, query as fsQuery, orderBy, limit, getDocs } from 'firebase/firestore';
+import { followUser, unfollowUser, checkFollowing } from '../services/postsService';
+import { useUser } from '../context/UserContext';
 import GlassCard from '../components/GlassCard';
 
 const { width } = Dimensions.get('window');
 
-// Build searchable users from mock post authors
-const MOCK_USERS = [
-  { id: 'user_1', username: 'aurora.travels', name: 'Aurora Voss', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80', bio: '🌍 42 countries & counting ✈️', followers: 12400 },
-  { id: 'user_2', username: 'nomad.lena', name: 'Lena Müller', avatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100&q=80', bio: 'Solo explorer & hidden gem hunter', followers: 8900 },
-  { id: 'user_3', username: 'kai.wanderlust', name: 'Kai Chen', avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&q=80', bio: 'Street food & neon lights 🍜', followers: 21000 },
-  { id: 'user_4', username: 'marco.roams', name: 'Marco Espinoza', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80', bio: 'Budget travel pro 💰', followers: 5600 },
-  { id: 'user_5', username: 'sofia.captures', name: 'Sofia Andersen', avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100&q=80', bio: 'Photography & wandering 📷', followers: 31000 },
-];
-
+// Build searchable users from Firestore (populated at runtime)
 const TRENDING_TAGS = ['hidden gem', 'beach', 'food', 'city', 'nature', 'adventure', 'budget', 'luxury'];
 
 type Tab = 'All' | 'People' | 'Places' | 'Posts';
@@ -35,27 +31,62 @@ const TABS: Tab[] = ['All', 'People', 'Places', 'Posts'];
 type SortOrder = 'popular' | 'newest';
 
 export default function SearchScreen() {
+  const { user: loggedInUser } = useUser();
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('All');
   const [sortOrder, setSortOrder] = useState<SortOrder>('popular');
   const [followedUsers, setFollowedUsers] = useState<string[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [allPosts, setAllPosts] = useState<Post[]>([]);
+  const [allUsers, setAllUsers] = useState<Array<{ id: string; username: string; name: string; avatar: string | null; bio: string }>>([]);
+
+  // Load posts from Firestore on mount
+  useEffect(() => {
+    getDocs(fsQuery(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100))).then((snap) => {
+      const posts: Post[] = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id, userId: data.userId ?? '', username: data.username ?? '',
+          userAvatar: data.userAvatar ?? '', imageUrl: data.mediaItems?.[0]?.uri ?? data.imageUrl ?? '',
+          mediaItems: data.mediaItems ?? [], caption: data.caption ?? '',
+          locationArea: data.locationArea ?? '', destination: data.destination ?? '',
+          tags: data.tags ?? [], mood: data.mood ?? 'wanderlust',
+          likes: data.likesCount ?? 0, comments: data.commentsCount ?? 0,
+          delay: data.delay ?? 'now', privacy: data.privacy ?? 'public',
+          hideExactLocation: data.hideExactLocation ?? false, blurLocation: data.blurLocation ?? false,
+          hideStayLocation: data.hideStayLocation ?? false,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+          liked: false, saved: false, reactions: data.reactions ?? {}, userReaction: null,
+          reactionsEnabled: data.reactionsEnabled ?? true,
+        } as Post;
+      });
+      setAllPosts(posts);
+    }).catch(() => {});
+  }, []);
 
   // Strip leading # so searching "#amsterdam" or "amsterdam" both work
   const q = query.trim().toLowerCase().replace(/^#/, '');
 
+  // Search users from Firestore when query changes
+  useEffect(() => {
+    if (!q) { setAllUsers([]); return; }
+    getDocs(collection(db, 'users')).then((snap) => {
+      const users = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() as any }))
+        .filter((u: any) =>
+          (u.username ?? '').toLowerCase().includes(q) ||
+          (u.name ?? '').toLowerCase().includes(q) ||
+          (u.bio ?? '').toLowerCase().includes(q)
+        )
+        .map((u: any) => ({ id: u.id, username: u.username ?? '', name: u.name ?? '', avatar: u.avatarUri ?? null, bio: u.bio ?? '' }));
+      setAllUsers(users);
+    }).catch(() => {});
+  }, [query]);
+
   const filteredUsers = useMemo(
-    () =>
-      q
-        ? MOCK_USERS.filter(
-            (u) =>
-              u.username.toLowerCase().includes(q) ||
-              u.name.toLowerCase().includes(q) ||
-              u.bio.toLowerCase().includes(q)
-          )
-        : MOCK_USERS,
-    [q]
+    () => allUsers,
+    [allUsers]
   );
 
   const filteredPlaces = useMemo(
@@ -72,30 +103,33 @@ export default function SearchScreen() {
 
   const filteredPosts = useMemo(() => {
     if (!q) return [];
-    const matched = mockPosts.filter(
+    const matched = allPosts.filter(
       (p) =>
         p.caption.toLowerCase().includes(q) ||
         p.destination?.toLowerCase().includes(q) ||
         p.locationArea?.toLowerCase().includes(q) ||
         p.username.toLowerCase().includes(q) ||
-        // match #tag or bare word against every tag
         p.tags.some((t) => t.toLowerCase().includes(q))
     );
     if (sortOrder === 'popular') {
       return [...matched].sort((a, b) => b.likes - a.likes);
     }
-    // newest: sort by createdAt if available, else keep insertion order
     return [...matched].sort((a, b) => {
       const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return tb - ta;
     });
-  }, [q, sortOrder]);
+  }, [q, sortOrder, allPosts]);
 
   const toggleFollow = (userId: string) => {
+    if (!loggedInUser?.id) return;
+    const nowFollowing = !followedUsers.includes(userId);
     setFollowedUsers((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+      nowFollowing ? [...prev, userId] : prev.filter((id) => id !== userId)
     );
+    nowFollowing
+      ? followUser(loggedInUser.id, loggedInUser.username, loggedInUser.avatarUri, userId, '')
+      : unfollowUser(loggedInUser.id, userId);
   };
 
   const formatCount = (n: number) =>
@@ -108,7 +142,7 @@ export default function SearchScreen() {
   // ─── Place detail view ───
   if (selectedPlace) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <ScrollView showsVerticalScrollIndicator={false}>
           <View style={styles.detailHero}>
             <Image source={{ uri: selectedPlace.coverImage }} style={styles.detailHeroImg} resizeMode="cover" />
@@ -146,7 +180,7 @@ export default function SearchScreen() {
   if (selectedPost) {
     const img = selectedPost.mediaItems?.[0]?.uri;
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <ScrollView showsVerticalScrollIndicator={false}>
           <TouchableOpacity style={styles.detailBack} onPress={() => setSelectedPost(null)}>
             <Text style={styles.detailBackText}>← Back</Text>
@@ -181,7 +215,7 @@ export default function SearchScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       {/* Search bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
@@ -245,14 +279,14 @@ export default function SearchScreen() {
               const followed = followedUsers.includes(user.id);
               return (
                 <View key={user.id} style={styles.userRow}>
-                  <Image source={{ uri: user.avatar }} style={styles.userAvatar} />
+                <Image source={user.avatar ? { uri: user.avatar } : { uri: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80' }} style={styles.userAvatar} />
                   <View style={styles.userInfo}>
                     <Text style={styles.userName}>{user.name}</Text>
                     <Text style={styles.userHandle}>@{user.username}</Text>
                     <Text style={styles.userBio} numberOfLines={1}>{user.bio}</Text>
                   </View>
                   <View style={styles.userRight}>
-                    <Text style={styles.followerCount}>{formatCount(user.followers)} followers</Text>
+                    <Text style={styles.followerCount}>traveler</Text>
                     <TouchableOpacity
                       onPress={() => toggleFollow(user.id)}
                       style={[styles.followBtn, followed && styles.followBtnActive]}

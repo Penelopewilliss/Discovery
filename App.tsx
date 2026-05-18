@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Dimensions } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { theme } from './src/theme';
 import HomeScreen from './src/screens/HomeScreen';
-import ExploreScreen from './src/screens/ExploreScreen';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import GroupsScreen from './src/screens/GroupsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -18,7 +18,10 @@ import ProfileSetupScreen from './src/screens/ProfileSetupScreen';
 import MessagesScreen from './src/screens/MessagesScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import SearchScreen from './src/screens/SearchScreen';
+import PassportScreen from './src/screens/PassportScreen';
 import { UserProvider, useUser } from './src/context/UserContext';
+
+const SCREEN_W = Dimensions.get('window').width;
 import { AuthStackParamList, RootStackParamList } from './src/navigation/types';
 
 // Configure how notifications appear when app is in foreground
@@ -28,12 +31,11 @@ const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 const TABS = [
-  { name: 'Home', emoji: '🏠' },
-  { name: 'Explore', emoji: '🧭' },
-  { name: 'Create', emoji: '✈️' },
+  { name: 'Feed', emoji: '🏠' },
+  { name: 'Passport', emoji: '🛂' },
   { name: 'Groups', emoji: '👥' },
-  { name: 'Messages', emoji: '💬' },
   { name: 'Search', emoji: '🔎' },
+  { name: 'Messages', emoji: '💬' },
   { name: 'Profile', emoji: '👤' },
 ];
 
@@ -43,7 +45,7 @@ function TopBar({ active, onSelect }: { active: string; onSelect: (name: string)
     <View style={[styles.tabBar, { paddingTop: insets.top }]}>
       <LinearGradient colors={['#0A0A0F', '#12121A']} style={StyleSheet.absoluteFill} />
       <Text style={styles.brandName}>HiddenGems</Text>
-      <View style={styles.tabs}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
         {TABS.map((tab) => {
           const focused = active === tab.name;
           return (
@@ -54,7 +56,7 @@ function TopBar({ active, onSelect }: { active: string; onSelect: (name: string)
             </TouchableOpacity>
           );
         })}
-      </View>
+      </ScrollView>
       <View style={styles.border} />
     </View>
   );
@@ -62,24 +64,46 @@ function TopBar({ active, onSelect }: { active: string; onSelect: (name: string)
 
 function MainScreen({ name }: { name: string }) {
   switch (name) {
-    case 'Explore': return <ExploreScreen />;
-    case 'Create': return <CreatePostScreen />;
     case 'Groups': return <GroupsScreen />;
     case 'Messages': return <MessagesScreen />;
     case 'Search': return <SearchScreen />;
+    case 'Passport': return <PassportScreen />;
     case 'Profile': return <ProfileScreen />;
     default: return <HomeScreen />;
   }
 }
 
 function MainApp() {
-  const [activeTab, setActiveTab] = useState('Home');
+  const [activeTab, setActiveTab] = useState('Feed');
+  const [showCreate, setShowCreate] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  const handleTabSelect = (name: string) => {
+    setActiveTab(name);
+    setShowCreate(false);
+  };
+
+  const handleFab = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowCreate((v) => !v);
+  };
+
   return (
     <View style={styles.root}>
-      <TopBar active={activeTab} onSelect={setActiveTab} />
+      <TopBar active={showCreate ? '' : activeTab} onSelect={handleTabSelect} />
       <View style={styles.screen}>
-        <MainScreen name={activeTab} />
+        {showCreate ? <CreatePostScreen /> : <MainScreen name={activeTab} />}
       </View>
+      {/* Floating create button */}
+      <TouchableOpacity
+        style={[styles.fab, { bottom: insets.bottom + 24 }]}
+        onPress={handleFab}
+        activeOpacity={0.85}
+      >
+        <LinearGradient colors={[theme.colors.primary, theme.colors.accent]} style={styles.fabGrad}>
+          <Text style={styles.fabIcon}>{showCreate ? '✕' : '+'}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -154,15 +178,15 @@ const styles = StyleSheet.create({
   tabBar: { backgroundColor: theme.colors.surface, zIndex: 100 },
   brandName: {
     color: theme.colors.textMuted,
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 1.5,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 2,
     textAlign: 'center',
-    paddingTop: 8,
-    paddingBottom: 2,
+    paddingTop: 6,
+    paddingBottom: 1,
   },
-  tabs: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 8, paddingHorizontal: 4 },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 4, position: 'relative' },
+  tabs: { flexDirection: 'row', paddingBottom: 8, paddingHorizontal: 4 },
+  tab: { width: Math.floor(SCREEN_W / 6), alignItems: 'center', paddingVertical: 4, position: 'relative' },
   tabEmoji: { fontSize: 18 },
   tabEmojiDim: { opacity: 0.45 },
   tabLabel: { fontSize: 8, color: theme.colors.textMuted, fontWeight: '500', marginTop: 2 },
@@ -178,4 +202,23 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
   },
   border: { height: 1, backgroundColor: theme.colors.border },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    shadowColor: theme.colors.primary,
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  fabGrad: {
+    flex: 1,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabIcon: { color: '#fff', fontSize: 28, fontWeight: '300', lineHeight: 32 },
 });

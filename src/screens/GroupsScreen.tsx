@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,20 +12,27 @@ import {
   ScrollView,
   Alert,
   Image,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { theme } from '../theme';
-import { mockGroups, addGroup, toggleJoinGroup } from '../data/mockData';
+import { auth, db, storage } from '../firebase';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
+import { createGroupInFirestore, joinGroup, leaveGroup, requestGroup, cancelRequestGroup, createGroupTrip, listenGroupTrips, listenGroupTripEntries, addGroupTripEntry } from '../services/postsService';
+import { useUser } from '../context/UserContext';
 import GroupCard from '../components/GroupCard';
-import { Group } from '../types';
+import { Group, GroupTrip, GroupTripEntry } from '../types';
 
 const FILTERS = ['All', 'Public', 'Private', 'Joined', 'Mine'];
 
 export default function GroupsScreen() {
+  const { user: loggedInUser } = useUser();
   const [filter, setFilter] = useState('All');
-  const [query, setQuery] = useState('');
-  const [tick, setTick] = useState(0);
+  const [searchText, setSearchText] = useState('');
+  const [groups, setGroups] = useState<Group[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [detailJoined, setDetailJoined] = useState(false);
@@ -36,20 +43,62 @@ export default function GroupsScreen() {
   const [newPrivate, setNewPrivate] = useState(false);
   const [newLocationSharing, setNewLocationSharing] = useState(false);
 
-  const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
+  // ── Group Trips state ──────────────────────────────────────────────────────
+  const [activeTrip, setActiveTrip] = useState<GroupTrip | null>(null);
+  const [trips, setTrips] = useState<GroupTrip[]>([]);
+  const [tripEntries, setTripEntries] = useState<GroupTripEntry[]>([]);
+  const [showTrips, setShowTrips] = useState(false);
+  const [newTripName, setNewTripName] = useState('');
+  const [showNewTripInput, setShowNewTripInput] = useState(false);
+  const [newPinName, setNewPinName] = useState('');
+  const [newPinNote, setNewPinNote] = useState('');
+  const [showAddPin, setShowAddPin] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const forceUpdate = useCallback(() => {}, []);
+  const uid = auth.currentUser?.uid ?? '';
+
+  // Load groups from Firestore in real time
+  useEffect(() => {
+    const q = query(collection(db, 'groups'), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      const loaded: Group[] = snap.docs.map((d) => {
+        const data = d.data();
+        const members: string[] = data.members ?? [];
+        const pending: string[] = data.pendingMembers ?? [];
+        return {
+          id: d.id,
+          name: data.name ?? '',
+          description: data.description ?? '',
+          isPrivate: data.isPrivate ?? false,
+          memberCount: data.memberCount ?? members.length,
+          coverImage: data.coverImage ?? 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&q=80',
+          joined: members.includes(uid),
+          requested: pending.includes(uid),
+          createdByMe: data.createdBy === uid,
+          locationSharingEnabled: data.locationSharingEnabled ?? false,
+        } as Group;
+      });
+      setGroups(loaded);
+    }, () => {});
+    return () => unsub();
+  }, [uid]);
 
   const openGroup = (group: Group) => {
     setDetailJoined(group.joined);
     setDetailMembers(group.memberCount);
     setDetailRequested(group.requested);
+    setShowTrips(false);
+    setActiveTrip(null);
+    setTrips([]);
     setSelectedGroup(group);
   };
 
-  const filtered = mockGroups.filter((g) => {
+  const filtered = groups.filter((g) => {
     const matchesQuery =
-      query.trim() === '' ||
-      g.name.toLowerCase().includes(query.toLowerCase()) ||
-      g.description.toLowerCase().includes(query.toLowerCase());
+      searchText.trim() === '' ||
+      g.name.toLowerCase().includes(searchText.toLowerCase()) ||
+      g.description.toLowerCase().includes(searchText.toLowerCase());
 
     if (!matchesQuery) return false;
     if (filter === 'Public') return !g.isPrivate;
@@ -59,49 +108,251 @@ export default function GroupsScreen() {
     return true;
   });
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newName.trim()) {
       Alert.alert('Name required', 'Please give your group a name.');
       return;
     }
-    addGroup({
-      name: newName.trim(),
-      description: newDesc.trim() || 'No description yet.',
-      isPrivate: newPrivate,
-      memberCount: 1,
-      coverImage: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&q=80',
-      joined: true,
-      requested: false,
-      createdByMe: true,
-      locationSharingEnabled: newLocationSharing,
-    });
+    if (!uid) return;
+    await createGroupInFirestore(
+      { name: newName.trim(), description: newDesc.trim() || 'No description yet.', isPrivate: newPrivate, locationSharingEnabled: newLocationSharing },
+      uid
+    ).catch(() => {});
     setNewName('');
     setNewDesc('');
     setNewPrivate(false);
     setNewLocationSharing(false);
     setShowCreate(false);
-    forceUpdate();
+  };
+
+  // ── Group Trips handlers ────────────────────────────────────────────────────
+  const openTrips = (group: Group) => {
+    setShowTrips(true);
+    setActiveTrip(null);
+    listenGroupTrips(group.id, setTrips);
+  };
+
+  const openTrip = (group: Group, trip: GroupTrip) => {
+    setActiveTrip(trip);
+    listenGroupTripEntries(group.id, trip.id, setTripEntries);
+  };
+
+  const handleCreateTrip = async (group: Group) => {
+    if (!newTripName.trim() || !uid) return;
+    await createGroupTrip(group.id, newTripName.trim(), uid).catch(() => {});
+    setNewTripName('');
+    setShowNewTripInput(false);
+  };
+
+  const handleAddPin = async (group: Group, trip: GroupTrip) => {
+    if (!newPinName.trim() || !uid) return;
+    await addGroupTripEntry(group.id, trip.id, {
+      type: 'pin',
+      userId: uid,
+      username: loggedInUser?.username ?? 'traveler',
+      userAvatar: loggedInUser?.avatarUri ?? null,
+      placeName: newPinName.trim(),
+      note: newPinNote.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    }).catch(() => {});
+    setNewPinName('');
+    setNewPinNote('');
+    setShowAddPin(false);
+  };
+
+  const handleAddPhoto = async (group: Group, trip: GroupTrip) => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    if (result.canceled || !result.assets[0]) return;
+    if (!uid) return;
+    setUploadingPhoto(true);
+    try {
+      const uri = result.assets[0].uri;
+      const res = await fetch(uri);
+      const blob = await res.blob();
+      const photoRef = storageRef(storage, `groupTrips/${group.id}/${trip.id}/${Date.now()}.jpg`);
+      await uploadBytes(photoRef, blob);
+      const photoUri = await getDownloadURL(photoRef);
+      await addGroupTripEntry(group.id, trip.id, {
+        type: 'photo',
+        userId: uid,
+        username: loggedInUser?.username ?? 'traveler',
+        userAvatar: loggedInUser?.avatarUri ?? null,
+        photoUri,
+        note: undefined,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (_) {}
+    setUploadingPhoto(false);
   };
 
   // ── Group detail view ─────────────────────────────────────────────────────
   if (selectedGroup) {
-    const group = mockGroups.find((g) => g.id === selectedGroup.id) ?? selectedGroup;
+    const group = groups.find((g) => g.id === selectedGroup.id) ?? selectedGroup;
 
     const handleDetailAction = () => {
-      toggleJoinGroup(group.id);
-      if (group.isPrivate && !detailJoined) {
+      if (!uid) return;
+      if (detailJoined) {
+        setDetailMembers((prev) => prev - 1);
+        setDetailJoined(false);
+        leaveGroup(group.id, uid).catch(() => {});
+      } else if (group.isPrivate) {
         setDetailRequested((prev) => !prev);
+        detailRequested
+          ? cancelRequestGroup(group.id, uid).catch(() => {})
+          : requestGroup(group.id, uid).catch(() => {});
       } else {
-        setDetailMembers((prev) => (detailJoined ? prev - 1 : prev + 1));
-        setDetailJoined((prev) => !prev);
+        setDetailMembers((prev) => prev + 1);
+        setDetailJoined(true);
+        joinGroup(group.id, uid).catch(() => {});
       }
-      forceUpdate();
     };
 
     const actionLabel = detailJoined ? 'Leave Group' : group.isPrivate ? (detailRequested ? 'Requested' : 'Request Access') : 'Join Group';
 
+    // ── Active trip view ────────────────────────────────────────────────────
+    if (activeTrip) {
+      return (
+        <SafeAreaView style={styles.container} edges={[]}>
+          <View style={styles.tripHeader}>
+            <TouchableOpacity onPress={() => setActiveTrip(null)}>
+              <Text style={styles.detailBackText}>← Trips</Text>
+            </TouchableOpacity>
+            <Text style={styles.tripTitle} numberOfLines={1}>{activeTrip.name}</Text>
+            {detailJoined && (
+              <View style={styles.tripActions}>
+                <TouchableOpacity onPress={() => setShowAddPin(true)} style={styles.tripActionBtn}>
+                  <Text style={styles.tripActionText}>📍 Pin</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleAddPhoto(group, activeTrip)} style={styles.tripActionBtn} disabled={uploadingPhoto}>
+                  <Text style={styles.tripActionText}>{uploadingPhoto ? '⏳' : '📷 Photo'}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {showAddPin && (
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <View style={styles.addPinCard}>
+                <TextInput style={styles.pinInput} value={newPinName} onChangeText={setNewPinName}
+                  placeholder="Place name (e.g. Sagrada Família)" placeholderTextColor={theme.colors.textMuted} />
+                <TextInput style={[styles.pinInput, { marginTop: 8 }]} value={newPinNote} onChangeText={setNewPinNote}
+                  placeholder="Note (optional)" placeholderTextColor={theme.colors.textMuted} />
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                  <TouchableOpacity onPress={() => { setShowAddPin(false); setNewPinName(''); setNewPinNote(''); }}
+                    style={[styles.pinBtn, { flex: 1, backgroundColor: theme.colors.surface }]}>
+                    <Text style={{ color: theme.colors.textSecondary }}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleAddPin(group, activeTrip)}
+                    style={[styles.pinBtn, { flex: 1 }]}>
+                    <LinearGradient colors={theme.colors.gradientPrimary as [string, string]}
+                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill as any} />
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Drop Pin</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          )}
+
+          <FlatList
+            data={tripEntries}
+            keyExtractor={(e) => e.id}
+            contentContainerStyle={{ padding: theme.spacing.md }}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <Text style={styles.emptyEmoji}>{detailJoined ? '📍' : '🔒'}</Text>
+                <Text style={styles.emptyText}>{detailJoined ? 'No entries yet.\nAdd a pin or photo above!' : 'Join the group to add memories.'}</Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <View style={styles.entryCard}>
+                <View style={styles.entryHeader}>
+                  {item.userAvatar
+                    ? <Image source={{ uri: item.userAvatar }} style={styles.entryAvatar} />
+                    : <View style={[styles.entryAvatar, { backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text>👤</Text>
+                      </View>}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.entryUser}>@{item.username}</Text>
+                    <Text style={styles.entryTime}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                  </View>
+                  <Text style={{ fontSize: 20 }}>{item.type === 'pin' ? '📍' : '📷'}</Text>
+                </View>
+                {item.type === 'pin' && (
+                  <View>
+                    <Text style={styles.entryPlace}>{item.placeName}</Text>
+                    {item.note ? <Text style={styles.entryNote}>{item.note}</Text> : null}
+                  </View>
+                )}
+                {item.type === 'photo' && item.photoUri && (
+                  <Image source={{ uri: item.photoUri }} style={styles.entryPhoto} resizeMode="cover" />
+                )}
+                {item.type === 'photo' && item.note ? <Text style={styles.entryNote}>{item.note}</Text> : null}
+              </View>
+            )}
+          />
+        </SafeAreaView>
+      );
+    }
+
+    // ── Trips list view ─────────────────────────────────────────────────────
+    if (showTrips) {
+      return (
+        <SafeAreaView style={styles.container} edges={[]}>
+          <View style={styles.tripHeader}>
+            <TouchableOpacity onPress={() => setShowTrips(false)}>
+              <Text style={styles.detailBackText}>← Group</Text>
+            </TouchableOpacity>
+            <Text style={styles.tripTitle}>Group Trips</Text>
+            {detailJoined && (
+              <TouchableOpacity onPress={() => setShowNewTripInput((v) => !v)} style={styles.tripActionBtn}>
+                <Text style={styles.tripActionText}>+ New</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {showNewTripInput && (
+            <View style={styles.addPinCard}>
+              <TextInput style={styles.pinInput} value={newTripName} onChangeText={setNewTripName}
+                placeholder="Trip name (e.g. Brothers Spain 2026)" placeholderTextColor={theme.colors.textMuted} />
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <TouchableOpacity onPress={() => { setShowNewTripInput(false); setNewTripName(''); }}
+                  style={[styles.pinBtn, { flex: 1, backgroundColor: theme.colors.surface }]}>
+                  <Text style={{ color: theme.colors.textSecondary }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleCreateTrip(group)} style={[styles.pinBtn, { flex: 1 }]}>
+                  <LinearGradient colors={theme.colors.gradientPrimary as [string, string]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill as any} />
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>Create</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          <FlatList
+            data={trips}
+            keyExtractor={(t) => t.id}
+            contentContainerStyle={{ padding: theme.spacing.md }}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <Text style={styles.emptyEmoji}>🗺️</Text>
+                <Text style={styles.emptyText}>{detailJoined ? 'No trips yet. Tap "+ New" to start one!' : 'Join the group to create trips.'}</Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity onPress={() => openTrip(group, item)} style={styles.tripCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tripCardName}>{item.name}</Text>
+                  <Text style={styles.tripCardMeta}>{item.entryCount} entries · {new Date(item.createdAt).toLocaleDateString()}</Text>
+                </View>
+                <Text style={{ color: theme.colors.textSecondary }}>›</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </SafeAreaView>
+      );
+    }
+
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <ScrollView showsVerticalScrollIndicator={false}>
           <View style={{ height: 240 }}>
             <Image source={{ uri: group.coverImage }} style={StyleSheet.absoluteFillObject as any} resizeMode="cover" />
@@ -136,6 +387,14 @@ export default function GroupsScreen() {
                 <Text style={styles.detailActionText}>{actionLabel}</Text>
               </LinearGradient>
             </TouchableOpacity>
+
+            {(detailJoined || group.createdByMe) && (
+              <TouchableOpacity onPress={() => openTrips(group)} style={[styles.detailActionWrap, { marginTop: 12 }]}>
+                <View style={[styles.detailActionBtn, { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border }]}>
+                  <Text style={[styles.detailActionText, { color: theme.colors.text }]}>🗺️ Group Trips</Text>
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -145,7 +404,7 @@ export default function GroupsScreen() {
 
   if (showCreate) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={[]}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.createContainer} keyboardShouldPersistTaps="handled">
             {/* Create header */}
@@ -220,7 +479,7 @@ export default function GroupsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
@@ -246,11 +505,11 @@ export default function GroupsScreen() {
           style={styles.searchInput}
           placeholder="Search groups..."
           placeholderTextColor={theme.colors.textMuted}
-          value={query}
-          onChangeText={setQuery}
+          value={searchText}
+          onChangeText={setSearchText}
         />
-        {query.length > 0 && (
-          <TouchableOpacity onPress={() => setQuery('')}>
+        {searchText.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchText('')}>
             <Text style={styles.clearIcon}>✕</Text>
           </TouchableOpacity>
         )}
@@ -281,7 +540,7 @@ export default function GroupsScreen() {
       {/* Groups list */}
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id + tick}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
@@ -305,6 +564,85 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  // ── Trip styles ────────────────────────────────────────────────────────────
+  tripHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    gap: 8,
+  },
+  tripTitle: {
+    flex: 1,
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  tripActions: { flexDirection: 'row', gap: 6 },
+  tripActionBtn: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  tripActionText: { color: theme.colors.text, fontSize: 13, fontWeight: '600' },
+  tripCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  tripCardName: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
+  tripCardMeta: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2 },
+  addPinCard: {
+    backgroundColor: theme.colors.surface,
+    margin: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  pinInput: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.sm,
+    padding: 10,
+    color: theme.colors.text,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  pinBtn: {
+    borderRadius: theme.borderRadius.full,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  entryCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  entryHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  entryAvatar: { width: 36, height: 36, borderRadius: 18 },
+  entryUser: { color: theme.colors.text, fontWeight: '600', fontSize: 13 },
+  entryTime: { color: theme.colors.textMuted, fontSize: 11 },
+  entryPlace: { color: theme.colors.text, fontSize: 15, fontWeight: '700' },
+  entryNote: { color: theme.colors.textSecondary, fontSize: 13, marginTop: 4 },
+  entryPhoto: { width: '100%', height: 200, borderRadius: theme.borderRadius.sm, marginTop: 4 },
+  // ── Existing styles ────────────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -459,7 +797,7 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: theme.spacing.md,
-    paddingBottom: theme.spacing.xxl,
+    paddingBottom: 100,
   },
   empty: {
     alignItems: 'center',

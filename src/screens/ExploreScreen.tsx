@@ -53,7 +53,7 @@ function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
   };
 }
 
-export default function ExploreScreen() {
+export default function ExploreScreen({ embedded = false }: { embedded?: boolean } = {}) {
   const { isVisited, markVisited, removeVisited, createTrip, mapPins, addMapPin, updateMapPin, deleteMapPin,
     activeLiveTrip, startLiveTrip, addLiveTripPin, pauseLiveTrip, resumeLiveTrip, endLiveTrip } = useUser();
   const mapRef = useRef<LeafletMapRef>(null);
@@ -258,7 +258,7 @@ export default function ExploreScreen() {
   if (selectedPlace) {
     const heroImage = detailPhotos[0] ?? selectedPlace.coverImage;
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={embedded ? [] : ['top']}>
         <ScrollView showsVerticalScrollIndicator={false}>
           {/* Hero */}
           <View style={styles.heroContainer}>
@@ -362,7 +362,7 @@ export default function ExploreScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={embedded ? [] : ['top']}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
