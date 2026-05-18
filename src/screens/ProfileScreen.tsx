@@ -26,7 +26,7 @@ const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, collection, query, where, limit } from 'firebase/firestore';
 import { FirestoreStory, deleteStory, unarchivePostInFirestore, getOrCreateDMConversation } from '../services/postsService';
 import {
   getIncomingFollowRequests, acceptFollowRequest, declineFollowRequest,
@@ -35,6 +35,7 @@ import {
 } from '../services/socialService';
 import * as FileSystem from 'expo-file-system/legacy';
 import GlassCard from '../components/GlassCard';
+import PostCard from '../components/PostCard';
 import { useUser } from '../context/UserContext';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -215,6 +216,7 @@ export default function ProfileScreen() {
 
     // Load the user's own posts
     getDocs(query(collection(db, 'posts'), where('userId', '==', uid), limit(50))).then((snap) => {
+
       const mapped: Post[] = snap.docs.map((d) => {
         const pd = d.data();
         return {
@@ -257,7 +259,7 @@ export default function ProfileScreen() {
       }).filter(Boolean) as FirestoreStory[];
       setMyStories(stories.sort((a, b) => b.createdAt - a.createdAt));
     }).catch(() => {});
-  }, []);
+  }, [loggedInUser?.id]);
 
   const displayName = loggedInUser?.name || '';
   const rawUsername = loggedInUser?.username || '';
@@ -968,35 +970,37 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* Post Preview Modal */}
+      {/* Post Full-View Modal */}
       <Modal visible={!!selectedPost} animationType="slide" presentationStyle="pageSheet">
         {selectedPost && (
-          <View style={[styles.pickerModal, { backgroundColor: theme.colors.background }]}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>{selectedPost.destination ?? 'Post'}</Text>
-              <TouchableOpacity onPress={() => setSelectedPost(null)}>
-                <Text style={styles.pickerClose}>✕</Text>
+          <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }} edges={['top']}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.spacing.md, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
+              <TouchableOpacity onPress={() => setSelectedPost(null)} style={{ marginRight: 12 }}>
+                <Text style={{ color: theme.colors.primary, fontSize: 16 }}>✕</Text>
               </TouchableOpacity>
+              <Text style={{ color: theme.colors.text, fontSize: 16, fontWeight: '700', flex: 1 }}>
+                {selectedPost.destination || 'Post'}
+              </Text>
             </View>
-            <ScrollView>
-              {(selectedPost.mediaItems?.[0]?.uri ?? selectedPost.imageUrl) ? (
-                <Image source={{ uri: selectedPost.mediaItems?.[0]?.uri ?? selectedPost.imageUrl }} style={{ width: '100%', aspectRatio: 1 }} resizeMode="cover" />
-              ) : null}
-              <View style={{ padding: theme.spacing.md }}>
-                <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 8 }}>📍 {selectedPost.locationArea}</Text>
-                {!!selectedPost.caption && <Text style={{ color: theme.colors.text, fontSize: 15, lineHeight: 22 }}>{selectedPost.caption}</Text>}
-                <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
-                  <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>❤️ {selectedPost.likes}</Text>
-                  <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>💬 {selectedPost.comments}</Text>
-                </View>
-                {selectedPost.mood?.length > 0 && (
-                  <Text style={{ color: theme.colors.primary, fontSize: 13, marginTop: 8 }}>
-                    {selectedPost.mood.join(' · ')}
-                  </Text>
-                )}
-              </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <PostCard
+                post={selectedPost}
+                onUpdate={(updated) => {
+                  setSelectedPost(updated);
+                  setMyPosts((prev) => prev.map((p) => p.id === updated.id ? updated : p));
+                }}
+                onDelete={() => {
+                  setMyPosts((prev) => prev.filter((p) => p.id !== selectedPost.id));
+                  setSelectedPost(null);
+                }}
+                onArchive={() => {
+                  setMyPosts((prev) => prev.filter((p) => p.id !== selectedPost.id));
+                  setArchivedPosts((prev) => [{ ...selectedPost, archived: true }, ...prev]);
+                  setSelectedPost(null);
+                }}
+              />
             </ScrollView>
-          </View>
+          </SafeAreaView>
         )}
       </Modal>
 
@@ -1458,6 +1462,7 @@ const styles = StyleSheet.create({
   },
   userListName: { color: theme.colors.text, fontSize: 15, fontWeight: '600' },
   userListHandle: { color: theme.colors.textMuted, fontSize: 13, marginTop: 1 },
+  userListSub: { color: theme.colors.textMuted, fontSize: 13, marginTop: 1 },
   friendMsgBtn: {
     width: 38,
     height: 38,
