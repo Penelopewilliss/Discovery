@@ -21,7 +21,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Dimensions } from 'react-native';
 
 const SCREEN_W = Dimensions.get('window').width;
-const GRID_ITEM_SIZE = Math.floor((SCREEN_W - 2) / 3);
+// 3 items × 2px margin each = 6px total; no negative margin on postsGrid
+const GRID_ITEM_SIZE = Math.floor((SCREEN_W - 6) / 3);
 
 import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
@@ -260,6 +261,16 @@ export default function ProfileScreen() {
       setMyStories(stories.sort((a, b) => b.createdAt - a.createdAt));
     }).catch(() => {});
   }, [loggedInUser?.id]);
+
+  // DEBUG: log post URLs to Metro terminal to diagnose grid thumbnail issue
+  useEffect(() => {
+    if (myPosts.length === 0) return;
+    console.log('[ProfileGrid] posts:', myPosts.length);
+    myPosts.slice(0, 5).forEach((p, i) => {
+      const raw = p.mediaItems?.[0]?.uri ?? p.imageUrl ?? '';
+      console.log(`[ProfileGrid] post[${i}] raw="${raw.slice(0, 80)}" isHttp=${raw.startsWith('http')}`);
+    });
+  }, [myPosts]);
 
   const displayName = loggedInUser?.name || '';
   const rawUsername = loggedInUser?.username || '';
@@ -650,14 +661,20 @@ export default function ProfileScreen() {
             ) : (
               <View style={styles.postsGrid}>
                 {myPosts.map((post) => {
-                  const thumb = post.mediaItems?.[0]?.uri ?? post.imageUrl;
+                  const rawUrl = post.mediaItems?.[0]?.uri ?? post.imageUrl ?? '';
+                  const thumb = rawUrl.startsWith('http') ? rawUrl : null;
                   return (
                     <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
-                      <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface }}>
-                        <Text style={{ fontSize: 28 }}>🗺️</Text>
-                      </View>
-                      {!!thumb && (
-                        <Image source={{ uri: thumb }} style={styles.gridImage} resizeMode="cover" />
+                      {thumb ? (
+                        <Image
+                          source={{ uri: thumb }}
+                          style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface }}>
+                          <Text style={{ fontSize: 28 }}>🗺️</Text>
+                        </View>
                       )}
                       {post.mediaItems && post.mediaItems.length > 1 && (
                         <View style={styles.gridMultiBadge}>
@@ -684,7 +701,8 @@ export default function ProfileScreen() {
             ) : (
               <View style={styles.postsGrid}>
                 {archivedPosts.map((post) => {
-                  const thumb = post.mediaItems?.[0]?.uri ?? post.imageUrl;
+                  const rawUrl = post.mediaItems?.[0]?.uri ?? post.imageUrl ?? '';
+                  const thumb = rawUrl.startsWith('http') ? rawUrl : null;
                   return (
                     <TouchableOpacity
                       key={post.id}
@@ -729,11 +747,16 @@ export default function ProfileScreen() {
                         ]);
                       }}
                     >
-                      <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface, opacity: 0.6 }}>
-                        <Text style={{ fontSize: 28 }}>🗺️</Text>
-                      </View>
-                      {!!thumb && (
-                        <Image source={{ uri: thumb }} style={[styles.gridImage, { opacity: 0.6 }]} resizeMode="cover" />
+                      {thumb ? (
+                        <Image
+                          source={{ uri: thumb }}
+                          style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, opacity: 0.6 }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface, opacity: 0.6 }}>
+                          <Text style={{ fontSize: 28 }}>🗺️</Text>
+                        </View>
                       )}
                       <View style={styles.archiveBadge}>
                         <Text style={styles.archiveBadgeText}>📦</Text>
@@ -1710,7 +1733,6 @@ const styles = StyleSheet.create({
   postsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -1,
   },
   gridItem: {
     width: GRID_ITEM_SIZE,
@@ -1721,11 +1743,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
   },
   gridImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: GRID_ITEM_SIZE,
-    height: GRID_ITEM_SIZE,
+    width: '100%',
+    height: '100%',
   },
   gridMultiBadge: {
     position: 'absolute',
