@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { Stamp } from '../types';
 
 export type LoggedInUser = {
   id: string;
@@ -108,6 +109,9 @@ type UserContextType = {
   completedLiveTrips: CompletedLiveTrip[];
   deleteCompletedTrip: (id: string) => void;
   addManualTrip: (trip: CompletedLiveTrip) => void;
+  stamps: Stamp[];
+  addStamp: (stamp: Stamp) => void;
+  removeStamp: (country: string) => void;
 };
 
 const UserContext = createContext<UserContextType>({
@@ -136,6 +140,9 @@ const UserContext = createContext<UserContextType>({
   completedLiveTrips: [],
   deleteCompletedTrip: () => {},
   addManualTrip: () => {},
+  stamps: [],
+  addStamp: () => {},
+  removeStamp: () => {},
 });
 
 async function autoFollowDemoUsers(uid: string, userData: Record<string, any>) {
@@ -170,7 +177,7 @@ async function autoFollowDemoUsers(uid: string, userData: Record<string, any>) {
   }
 
   // Mark done so this never runs again for this account
-  await updateDoc(doc(db, 'users', uid), { hasAutoFollowedDemoUsers: true });
+  await setDoc(doc(db, 'users', uid), { hasAutoFollowedDemoUsers: true }, { merge: true });
 }
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
@@ -182,6 +189,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [tripStories, setTripStories] = useState<TripStory[]>([]);
   const [activeLiveTrip, setActiveLiveTrip] = useState<LiveTrip | null>(null);
   const [completedLiveTrips, setCompletedLiveTrips] = useState<CompletedLiveTrip[]>([]);
+  const [stamps, setStamps] = useState<Stamp[]>([]);
 
   // Firebase auth listener — auto login/logout
   useEffect(() => {
@@ -190,7 +198,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (snap.exists()) {
           setUser({ id: firebaseUser.uid, ...snap.data() } as LoggedInUser);
-          // Auto-follow demo profiles once per account
+          setStamps((snap.data().stamps as Stamp[]) ?? []);
+          // Backfill email if it was missing from the doc
+          if (!snap.data().email && firebaseUser.email) {
+            setDoc(doc(db, 'users', firebaseUser.uid), { email: firebaseUser.email }, { merge: true }).catch(() => {});
+          }
           if (!snap.data().hasAutoFollowedDemoUsers) {
             autoFollowDemoUsers(firebaseUser.uid, snap.data() as any).catch(() => {});
           }
@@ -337,6 +349,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const addStamp = (stamp: Stamp) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    setStamps((prev) => {
+      if (prev.find((s) => s.country === stamp.country)) return prev;
+      const next = [...prev, stamp];
+      setDoc(doc(db, 'users', uid), { stamps: next }, { merge: true }).catch(() => {});
+      return next;
+    });
+  };
+
+  const removeStamp = (country: string) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    setStamps((prev) => {
+      const next = prev.filter((s) => s.country !== country);
+      setDoc(doc(db, 'users', uid), { stamps: next }, { merge: true }).catch(() => {});
+      return next;
+    });
+  };
+
   return (
     <UserContext.Provider value={{
       user, setUser, authLoading,
@@ -346,6 +379,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       tripStories, addTripStory,
       activeLiveTrip, startLiveTrip, addLiveTripPin, pauseLiveTrip, resumeLiveTrip, endLiveTrip,
       completedLiveTrips, deleteCompletedTrip, addManualTrip,
+      stamps, addStamp, removeStamp,
     }}>
       {children}
     </UserContext.Provider>

@@ -8,7 +8,21 @@ export type TravelTag =
   | 'luxury'
   | 'adventure'
   | 'culture'
-  | 'solo';
+  | 'solo'
+  | 'family'
+  | 'road trip'
+  | 'hiking'
+  | 'photography'
+  | 'nightlife'
+  | 'wellness'
+  | 'history'
+  | 'wildlife'
+  | 'backpacking'
+  | 'island'
+  | 'mountains'
+  | 'skiing'
+  | 'volunteering'
+  | 'digital nomad';
 
 export type PostDelay =
   | 'now'
@@ -26,7 +40,15 @@ export type TravelMood =
   | 'adventurous'
   | 'romantic'
   | 'spiritual'
-  | 'thrilled';
+  | 'thrilled'
+  | 'nostalgic'
+  | 'energized'
+  | 'peaceful'
+  | 'curious'
+  | 'grateful'
+  | 'inspired'
+  | 'excited'
+  | 'reflective';
 
 export interface Comment {
   id: string;
@@ -36,6 +58,17 @@ export interface Comment {
   userAvatar: string;
   text: string;
   createdAt: string;
+}
+
+export interface UserTag {
+  userId: string;
+  username: string;
+  avatarUri?: string;
+}
+
+export interface PhotoTag extends UserTag {
+  xPct: number;
+  yPct: number;
 }
 
 export interface User {
@@ -69,7 +102,7 @@ export interface Post {
   locationArea: string;
   destination: string;
   tags: TravelTag[];
-  mood: TravelMood;
+  mood: TravelMood[];
   likes: number;
   comments: number;
   delay: PostDelay;
@@ -83,6 +116,8 @@ export interface Post {
   reactions: Record<string, number>;
   userReaction: string | null;
   reactionsEnabled: boolean;
+  taggedUsers?: UserTag[];
+  photoTags?: PhotoTag[];
   tripShare?: {
     tripName: string;
     stops: string[];

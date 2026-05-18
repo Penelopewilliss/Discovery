@@ -461,14 +461,14 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
             }
             userLocation={userLocation}
             markers={[
-              // Places you've marked as visited — green pins
+              // Places you've marked as visited — green pins; country stamps — purple pins
               ...visitedPlaces.filter((p) => p.lat && p.lon).map((p) => ({
                 id: `visited_${p.id}`,
                 latitude: p.lat,
                 longitude: p.lon,
-                color: '#22c55e',
+                color: p.id.startsWith('country_') ? '#8b5cf6' : '#22c55e',
                 label: p.name,
-                sublabel: `✅ Visited · ${p.country}`,
+                sublabel: p.id.startsWith('country_') ? '🌍 Country visited' : `✅ Visited · ${p.country}`,
               })),
               // Search results — blue pins
               ...(query.trim()

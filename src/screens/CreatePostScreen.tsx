@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,10 @@ import {
   FlatList,
   Dimensions,
   ActivityIndicator,
+  Modal,
+  TouchableWithoutFeedback,
+  PanResponder,
+  GestureResponderEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,14 +23,16 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { theme } from '../theme';
 import { uploadPostMedia, createPostInFirestore } from '../services/postsService';
-import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem } from '../types';
+import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem, UserTag, PhotoTag } from '../types';
+import { db } from '../firebase';
+import { collection, query, where, getDocs, getDoc, doc, orderBy, limit } from 'firebase/firestore';
 import GlassCard from '../components/GlassCard';
 import { useUser } from '../context/UserContext';
 import { scheduleLocalNotification, scheduleDelayedPostNotification } from '../utils/notifications';
 import { searchFsqPlaces, FsqPlace } from '../utils/foursquare';
 
-const TAGS: TravelTag[] = ['beach', 'food', 'hidden gem', 'city', 'nature', 'budget', 'luxury', 'adventure', 'culture', 'solo'];
-const MOODS: TravelMood[] = ['wanderlust', 'relaxed', 'adventurous', 'romantic', 'spiritual', 'thrilled'];
+const TAGS: TravelTag[] = ['beach', 'food', 'hidden gem', 'city', 'nature', 'budget', 'luxury', 'adventure', 'culture', 'solo', 'family', 'road trip', 'hiking', 'photography', 'nightlife', 'wellness', 'history', 'wildlife', 'backpacking', 'island', 'mountains', 'skiing', 'volunteering', 'digital nomad'];
+const MOODS: TravelMood[] = ['wanderlust', 'relaxed', 'adventurous', 'romantic', 'spiritual', 'thrilled', 'nostalgic', 'energized', 'peaceful', 'curious', 'grateful', 'inspired', 'excited', 'reflective'];
 const DELAY_OPTIONS: { label: string; value: PostDelay }[] = [
   { label: '🟢 Post Now', value: 'now' },
   { label: '⏱ After 6 Hours', value: '6h' },
@@ -49,7 +55,7 @@ export default function CreatePostScreen() {
   const [destination, setDestination] = useState('');
   const [selectedPlaceFsq, setSelectedPlaceFsq] = useState<FsqPlace | null>(null);
   const [selectedTags, setSelectedTags] = useState<TravelTag[]>([]);
-  const [selectedMood, setSelectedMood] = useState<TravelMood>('wanderlust');
+  const [selectedMood, setSelectedMood] = useState<TravelMood[]>(['wanderlust']);
   const [delay, setDelay] = useState<PostDelay>('24h');
   const [privacy, setPrivacy] = useState<PrivacyLevel>('public');
   const [hideExact, setHideExact] = useState(true);
@@ -57,6 +63,21 @@ export default function CreatePostScreen() {
   const [hideStay, setHideStay] = useState(true);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [reactionsEnabled, setReactionsEnabled] = useState(true);
+  const [taggedUsers, setTaggedUsers] = useState<UserTag[]>([]);
+  const [photoTags, setPhotoTags] = useState<PhotoTag[]>([]);
+  // @mention
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionSuggestions, setMentionSuggestions] = useState<UserTag[]>([]);
+  const [mentionLoading, setMentionLoading] = useState(false);
+  // photo tag modal
+  const [showPhotoTagModal, setShowPhotoTagModal] = useState(false);
+  const [pendingTagPos, setPendingTagPos] = useState<{ xPct: number; yPct: number } | null>(null);
+  const [photoTagSearch, setPhotoTagSearch] = useState('');
+  const [photoTagSuggestions, setPhotoTagSuggestions] = useState<UserTag[]>([]);
+  const [photoTagLoading, setPhotoTagLoading] = useState(false);
+  const photoTagSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const photoImgRef = useRef<View>(null);
+  const [photoImgLayout, setPhotoImgLayout] = useState<{ width: number; height: number } | null>(null);
   const [suggestions, setSuggestions] = useState<FsqPlace[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [placesLoading, setPlacesLoading] = useState(false);
@@ -95,6 +116,87 @@ export default function CreatePostScreen() {
     setShowSuggestions(false);
   };
 
+  // Search users by username prefix (skipping those who opted out of tagging)
+  const searchUsers = async (q: string): Promise<UserTag[]> => {
+    if (!q || q.length < 1) return [];
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'users'),
+          where('username', '>=', q.toLowerCase()),
+          where('username', '<=', q.toLowerCase() + '\uf8ff'),
+          limit(8))
+      );
+      return snap.docs
+        .filter((d) => d.data().allowTagging !== false)
+        .map((d) => ({
+          userId: d.id,
+          username: d.data().username ?? '',
+          avatarUri: d.data().avatarUri ?? undefined,
+        }));
+    } catch { return []; }
+  };
+
+  // Handle caption changes and detect @mention trigger
+  const handleCaptionChange = (text: string) => {
+    setCaption(text);
+    // Find the @word at the cursor (last @word in the text)
+    const match = text.match(/@(\w*)$/);
+    if (match) {
+      const q = match[1];
+      setMentionQuery(q);
+      clearTimeout(searchTimer.current);
+      setMentionLoading(true);
+      searchTimer.current = setTimeout(async () => {
+        const results = await searchUsers(q);
+        setMentionSuggestions(results);
+        setMentionLoading(false);
+      }, 300);
+    } else {
+      setMentionQuery(null);
+      setMentionSuggestions([]);
+    }
+  };
+
+  const insertMention = (u: UserTag) => {
+    // Replace the trailing @query with @username
+    const replaced = caption.replace(/@(\w*)$/, `@${u.username} `);
+    setCaption(replaced);
+    setMentionQuery(null);
+    setMentionSuggestions([]);
+    setTaggedUsers((prev) => prev.find((t) => t.userId === u.userId) ? prev : [...prev, u]);
+  };
+
+  // Photo tag search
+  useEffect(() => {
+    if (photoTagSearch.length < 1) { setPhotoTagSuggestions([]); return; }
+    clearTimeout(photoTagSearchTimer.current);
+    setPhotoTagLoading(true);
+    photoTagSearchTimer.current = setTimeout(async () => {
+      const results = await searchUsers(photoTagSearch);
+      setPhotoTagSuggestions(results);
+      setPhotoTagLoading(false);
+    }, 300);
+    return () => clearTimeout(photoTagSearchTimer.current);
+  }, [photoTagSearch]);
+
+  const confirmPhotoTag = (u: UserTag) => {
+    if (!pendingTagPos) return;
+    setPhotoTags((prev) => [...prev, { ...u, xPct: pendingTagPos.xPct, yPct: pendingTagPos.yPct }]);
+    setTaggedUsers((prev) => prev.find((t) => t.userId === u.userId) ? prev : [...prev, u]);
+    setPendingTagPos(null);
+    setPhotoTagSearch('');
+    setPhotoTagSuggestions([]);
+  };
+
+  const handlePhotoPress = (e: GestureResponderEvent) => {
+    if (!photoImgLayout) return;
+    const xPct = e.nativeEvent.locationX / photoImgLayout.width;
+    const yPct = e.nativeEvent.locationY / photoImgLayout.height;
+    setPendingTagPos({ xPct, yPct });
+    setPhotoTagSearch('');
+    setPhotoTagSuggestions([]);
+  };
+
   const MAX_MEDIA = 10;
 
   const pickMedia = async (source: 'library' | 'camera', type: 'photo' | 'video') => {
@@ -117,11 +219,11 @@ export default function CreatePostScreen() {
           videoMaxDuration: 60,
         })
       : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images', 'videos'],
+          mediaTypes: type === 'video' ? 'videos' : 'images',
           quality: 0.8,
           videoMaxDuration: 60,
-          allowsMultipleSelection: true,
-          selectionLimit: remaining,
+          allowsMultipleSelection: type !== 'video',
+          selectionLimit: type !== 'video' ? remaining : 1,
         });
     if (!result.canceled && result.assets.length > 0) {
       const newItems: MediaItem[] = result.assets.map((a) => ({
@@ -204,6 +306,8 @@ export default function CreatePostScreen() {
         reactions: {},
         userReaction: null,
         reactionsEnabled,
+        taggedUsers,
+        photoTags,
       };
 
       await createPostInFirestore(postData);
@@ -257,7 +361,11 @@ export default function CreatePostScreen() {
       setCaption('');
       setDestination('');
       setSelectedTags([]);
-      setSelectedMood('wanderlust');
+      setSelectedMood(['wanderlust']);
+      setTaggedUsers([]);
+      setPhotoTags([]);
+      setMentionQuery(null);
+      setMentionSuggestions([]);
       setDelay('24h');
       setPrivacy('public');
       setHideExact(true);
@@ -336,6 +444,16 @@ export default function CreatePostScreen() {
           )}
         </View>
 
+        {/* Photo tag button — only shown when a photo is selected */}
+        {mediaItems.some((m) => m.type === 'photo') && (
+          <TouchableOpacity style={styles.photoTagBtn} onPress={() => setShowPhotoTagModal(true)}>
+            <Text style={styles.photoTagBtnText}>👥 Tag people in photo</Text>
+            {photoTags.length > 0 && (
+              <Text style={styles.photoTagCount}>{photoTags.length} tagged</Text>
+            )}
+          </TouchableOpacity>
+        )}
+
         {/* Safety notice */}
         <GlassCard style={styles.safetyCard}>
           <Text style={styles.safetyTitle}>🛡️ Safety Reminder</Text>
@@ -350,15 +468,48 @@ export default function CreatePostScreen() {
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.textArea}
-              placeholder="Tell your travel story..."
+              placeholder="Tell your travel story... type @ to tag someone"
               placeholderTextColor={theme.colors.textMuted}
               value={caption}
-              onChangeText={setCaption}
+              onChangeText={handleCaptionChange}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
             />
           </View>
+          {/* @mention dropdown */}
+          {mentionQuery !== null && (
+            <View style={styles.mentionDropdown}>
+              {mentionLoading && <ActivityIndicator size="small" color={theme.colors.primary} style={{ padding: 8 }} />}
+              {mentionSuggestions.map((u) => (
+                <TouchableOpacity key={u.userId} style={styles.mentionItem} onPress={() => insertMention(u)}>
+                  {u.avatarUri
+                    ? <Image source={{ uri: u.avatarUri }} style={styles.mentionAvatar} />
+                    : <View style={[styles.mentionAvatar, { backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={{ color: '#fff', fontSize: 12 }}>{u.username[0]?.toUpperCase()}</Text>
+                      </View>
+                  }
+                  <Text style={styles.mentionUsername}>@{u.username}</Text>
+                </TouchableOpacity>
+              ))}
+              {!mentionLoading && mentionSuggestions.length === 0 && mentionQuery.length > 0 && (
+                <Text style={styles.mentionEmpty}>No users found</Text>
+              )}
+            </View>
+          )}
+          {/* Tagged users chips */}
+          {taggedUsers.length > 0 && (
+            <View style={styles.taggedChips}>
+              {taggedUsers.map((u) => (
+                <View key={u.userId} style={styles.taggedChip}>
+                  <Text style={styles.taggedChipText}>@{u.username}</Text>
+                  <TouchableOpacity onPress={() => setTaggedUsers((prev) => prev.filter((t) => t.userId !== u.userId))}>
+                    <Text style={styles.taggedChipRemove}> ✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Destination */}
@@ -424,9 +575,9 @@ export default function CreatePostScreen() {
           <Text style={styles.label}>Mood</Text>
           <View style={styles.chipGroup}>
             {MOODS.map((mood) => {
-              const active = selectedMood === mood;
+              const active = selectedMood.includes(mood);
               return (
-                <TouchableOpacity key={mood} onPress={() => setSelectedMood(mood)}>
+                <TouchableOpacity key={mood} onPress={() => setSelectedMood((prev) => prev.includes(mood) ? prev.filter((m) => m !== mood) : [...prev, mood])}>
                   {active ? (
                     <LinearGradient
                       colors={theme.colors.gradientCool as [string, string]}
@@ -558,6 +709,79 @@ export default function CreatePostScreen() {
 
         <View style={{ height: theme.spacing.xxl }} />
       </ScrollView>
+
+      {/* Photo Tag Modal */}
+      <Modal visible={showPhotoTagModal} animationType="slide" transparent presentationStyle="overFullScreen">
+        <TouchableWithoutFeedback onPress={() => { if (!pendingTagPos) setShowPhotoTagModal(false); }}>
+          <View style={styles.photoTagOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.photoTagSheet}>
+                <Text style={styles.photoTagTitle}>👥 Tag people in photo</Text>
+                <Text style={styles.photoTagHint}>Tap anywhere on the photo to place a tag</Text>
+
+                {/* Photo with existing tag dots */}
+                <View
+                  ref={photoImgRef}
+                  style={styles.photoTagImg}
+                  onLayout={(e) => setPhotoImgLayout({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
+                >
+                  <TouchableOpacity activeOpacity={1} onPress={handlePhotoPress} style={{ flex: 1 }}>
+                    <Image source={{ uri: mediaItems.find((m) => m.type === 'photo')?.uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    {/* Existing photo tag dots */}
+                    {photoTags.map((pt, i) => (
+                      <View key={i} style={[styles.photoTagDot, { left: `${pt.xPct * 100}%`, top: `${pt.yPct * 100}%` }]}>
+                        <Text style={styles.photoTagDotText}>@{pt.username}</Text>
+                      </View>
+                    ))}
+                    {/* Pending dot */}
+                    {pendingTagPos && (
+                      <View style={[styles.photoTagDot, styles.photoTagDotPending, { left: `${pendingTagPos.xPct * 100}%`, top: `${pendingTagPos.yPct * 100}%` }]}>
+                        <Text style={styles.photoTagDotText}>?</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {/* Search for user after placing dot */}
+                {pendingTagPos && (
+                  <View style={styles.photoTagSearch}>
+                    <TextInput
+                      style={styles.photoTagInput}
+                      placeholder="Search by username..."
+                      placeholderTextColor={theme.colors.textMuted}
+                      value={photoTagSearch}
+                      onChangeText={setPhotoTagSearch}
+                      autoFocus
+                    />
+                    {photoTagLoading && <ActivityIndicator size="small" color={theme.colors.primary} />}
+                    {photoTagSuggestions.map((u) => (
+                      <TouchableOpacity key={u.userId} style={styles.mentionItem} onPress={() => confirmPhotoTag(u)}>
+                        {u.avatarUri
+                          ? <Image source={{ uri: u.avatarUri }} style={styles.mentionAvatar} />
+                          : <View style={[styles.mentionAvatar, { backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' }]}>
+                              <Text style={{ color: '#fff', fontSize: 12 }}>{u.username[0]?.toUpperCase()}</Text>
+                            </View>
+                        }
+                        <Text style={styles.mentionUsername}>@{u.username}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity onPress={() => { setPendingTagPos(null); setPhotoTagSearch(''); setPhotoTagSuggestions([]); }}>
+                      <Text style={[styles.mentionEmpty, { color: theme.colors.textMuted, paddingTop: 8 }]}>Cancel placement</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <View style={styles.photoTagActions}>
+                  <TouchableOpacity style={styles.photoTagDoneBtn} onPress={() => { setShowPhotoTagModal(false); setPendingTagPos(null); }}>
+                    <Text style={styles.photoTagDoneTxt}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -861,5 +1085,166 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: '500',
+  },
+  // @mention
+  mentionDropdown: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    marginTop: 4,
+    maxHeight: 200,
+    overflow: 'hidden',
+  },
+  mentionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.spacing.sm,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  mentionAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  mentionUsername: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  mentionEmpty: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    padding: 8,
+  },
+  taggedChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  taggedChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(139,92,246,0.15)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  taggedChipText: {
+    color: theme.colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  taggedChipRemove: {
+    color: theme.colors.primary,
+    fontSize: 13,
+  },
+  // Photo tag button
+  photoTagBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  photoTagBtnText: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  photoTagCount: {
+    color: theme.colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Photo tag modal
+  photoTagOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  photoTagSheet: {
+    backgroundColor: theme.colors.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: theme.spacing.md,
+    maxHeight: '90%',
+  },
+  photoTagTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  photoTagHint: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  photoTagImg: {
+    width: '100%',
+    height: 220,
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.surface,
+    marginBottom: 12,
+  },
+  photoTagDot: {
+    position: 'absolute',
+    backgroundColor: 'rgba(139,92,246,0.9)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    transform: [{ translateX: -30 }, { translateY: -12 }],
+  },
+  photoTagDotPending: {
+    backgroundColor: 'rgba(252,92,125,0.9)',
+  },
+  photoTagDotText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  photoTagSearch: {
+    marginBottom: 12,
+  },
+  photoTagInput: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 10,
+    color: theme.colors.text,
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  photoTagActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  photoTagDoneBtn: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  photoTagDoneTxt: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });

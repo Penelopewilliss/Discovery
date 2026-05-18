@@ -20,7 +20,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { Post, PostDelay, Comment, MediaItem } from '../types';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { Post, PostDelay, Comment, MediaItem, UserTag, PhotoTag } from '../types';
 import { theme } from '../theme';
 import {
   likePost, unlikePost, savePost, unsavePost,
@@ -33,6 +34,23 @@ import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
+
+/** Isolated component so useVideoPlayer hook is always called unconditionally */
+function VideoSlide({ uri, style }: { uri: string; style: object }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+    p.muted = false;
+    p.play();
+  });
+  return (
+    <VideoView
+      player={player}
+      style={style as any}
+      contentFit="cover"
+      nativeControls
+    />
+  );
+}
 
 const TAG_COLORS: Record<string, string[]> = {
   beach: ['#00C2FF', '#0072FF'],
@@ -73,6 +91,7 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
   const [reactions, setReactions] = useState<Record<string, number>>(post.reactions ?? {});
   const [showComments, setShowComments] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
+  const [taggedProfile, setTaggedProfile] = useState<UserTag | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [commentCount, setCommentCount] = useState(post.comments);
@@ -194,16 +213,38 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
 
   const handleSendComment = async () => {
     const text = commentText.trim();
-    if (!text) return;
+    if (!text || !loggedInUser?.id) return;
     setCommentText('');
-    const newComment = await addCommentToFirestore(post.id, text, {
-      userId: loggedInUser?.id ?? 'me',
-      username: (loggedInUser?.username ?? 'traveler').replace(/@/g, ''),
-      userAvatar: loggedInUser?.avatarUri ?? '',
-    });
-    setComments((prev) => [newComment, ...prev]);
+
+    // Optimistic: show the comment immediately before Firestore confirms
+    const tempId = `temp_${Date.now()}`;
+    const optimistic: Comment = {
+      id: tempId,
+      postId: post.id,
+      userId: loggedInUser.id,
+      username: (loggedInUser.username ?? 'traveler').replace(/@/g, ''),
+      userAvatar: loggedInUser.avatarUri ?? '',
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    setComments((prev) => [optimistic, ...prev]);
     setCommentCount((prev) => prev + 1);
-    onUpdate();
+
+    try {
+      const saved = await addCommentToFirestore(post.id, text, {
+        userId: loggedInUser.id,
+        username: (loggedInUser.username ?? 'traveler').replace(/@/g, ''),
+        userAvatar: loggedInUser.avatarUri ?? '',
+      });
+      // Swap temp placeholder with real Firestore id
+      setComments((prev) => prev.map((c) => c.id === tempId ? saved : c));
+      onUpdate();
+    } catch (_) {
+      // Rollback on failure
+      setComments((prev) => prev.filter((c) => c.id !== tempId));
+      setCommentCount((prev) => prev - 1);
+      Alert.alert('Error', 'Could not send comment. Please try again.');
+    }
   };
 
   const handleDoubleTap = () => {
@@ -254,7 +295,7 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
           </TouchableOpacity>
         )}
         <View style={styles.moodBadge}>
-          <Text style={styles.moodText}>{post.mood}</Text>
+          <Text style={styles.moodText}>{Array.isArray(post.mood) ? post.mood.join(' · ') : post.mood}</Text>
         </View>
         {isOwnPost && (
           <TouchableOpacity
@@ -348,10 +389,7 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
           <TouchableWithoutFeedback key={index} onPress={handleDoubleTap}>
             <View style={[styles.imageContainer, isMulti && { width: slideW }]}>
               {item.type === 'video' ? (
-                <View style={styles.videoPlaceholder}>
-                  <Text style={styles.videoPlaceholderIcon}>🎬</Text>
-                  <Text style={styles.videoPlaceholderLabel}>Video</Text>
-                </View>
+                <VideoSlide uri={item.uri} style={styles.image} />
               ) : (
                 <Image source={{ uri: item.uri }} style={styles.image} resizeMode="cover" />
               )}
@@ -359,13 +397,6 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
                 colors={['transparent', 'rgba(0,0,0,0.7)']}
                 style={styles.imageGradient}
               />
-              {item.type === 'video' && (
-                <View style={styles.videoPlayOverlay} pointerEvents="none">
-                  <View style={styles.videoPlayBtn}>
-                    <Text style={styles.videoPlayIcon}>▶</Text>
-                  </View>
-                </View>
-              )}
               {delayLabel && index === 0 && (
                 <View style={styles.delayBadge}>
                   <Text style={styles.delayText}>🔒 {delayLabel}</Text>
@@ -381,6 +412,16 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
                   <Text style={styles.heartAnim}>❤️</Text>
                 </View>
               )}
+              {/* Photo tag dots — only on first slide */}
+              {index === 0 && post.photoTags && post.photoTags.map((pt, pi) => (
+                <TouchableOpacity
+                  key={pi}
+                  style={[styles.photoTagDot, { left: `${pt.xPct * 100}%` as any, top: `${pt.yPct * 100}%` as any }]}
+                  onPress={() => setTaggedProfile(pt)}
+                >
+                  <Text style={styles.photoTagDotTxt}>@{pt.username}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </TouchableWithoutFeedback>
         );
@@ -446,8 +487,23 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
         })}
       </View>
 
-      {/* Caption */}
-      <Text style={styles.caption}>{post.caption}</Text>
+      {/* Caption — @mentions are tappable */}
+      <Text style={styles.caption}>
+        {post.caption?.split(/(@\w+)/g).map((part, i) => {
+          if (!part.startsWith('@')) return <Text key={i}>{part}</Text>;
+          const handle = part.slice(1);
+          const tagged = post.taggedUsers?.find((u) => u.username === handle);
+          return (
+            <Text
+              key={i}
+              style={styles.mentionLink}
+              onPress={() => { if (tagged) { setTaggedProfile(tagged); } }}
+            >
+              {part}
+            </Text>
+          );
+        })}
+      </Text>
 
       {/* Actions */}
       <View style={styles.actions}>
@@ -509,7 +565,12 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
             }
             renderItem={({ item }) => (
               <View style={styles.commentRow}>
-                <Image source={{ uri: item.userAvatar }} style={styles.commentAvatar} />
+                {item.userAvatar
+                  ? <Image source={{ uri: item.userAvatar }} style={styles.commentAvatar} />
+                  : <View style={[styles.commentAvatar, styles.avatarPlaceholder]}>
+                      <Text style={styles.avatarInitial}>{(item.username?.[0] ?? '?').toUpperCase()}</Text>
+                    </View>
+                }
                 <View style={styles.commentBubble}>
                   <Text style={styles.commentUsername}>@{item.username}</Text>
                   <Text style={styles.commentText}>{item.text}</Text>
@@ -520,7 +581,12 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
 
           {/* Input */}
           <View style={styles.commentInputRow}>
-            <Image source={{ uri: loggedInUser?.avatarUri ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80' }} style={styles.commentAvatar} />
+            {loggedInUser?.avatarUri
+              ? <Image source={{ uri: loggedInUser.avatarUri }} style={styles.commentAvatar} />
+              : <View style={[styles.commentAvatar, styles.avatarPlaceholder]}>
+                  <Text style={styles.avatarInitial}>{(loggedInUser?.username?.[0] ?? '?').toUpperCase()}</Text>
+                </View>
+            }
             <TextInput
               style={styles.commentInput}
               placeholder="Write a comment…"
@@ -581,6 +647,44 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* Tagged user mini profile modal */}
+      <Modal visible={!!taggedProfile} animationType="fade" transparent presentationStyle="overFullScreen">
+        <TouchableWithoutFeedback onPress={() => setTaggedProfile(null)}>
+          <View style={styles.profileModalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.profileModalSheet}>
+                <View style={styles.profileModalHandle} />
+                {taggedProfile?.avatarUri
+                  ? <Image source={{ uri: taggedProfile.avatarUri }} style={styles.profileModalAvatar} />
+                  : <View style={[styles.profileModalAvatar, { backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' }]}>
+                      <Text style={{ color: '#fff', fontSize: 28, fontWeight: '700' }}>{(taggedProfile?.username?.[0] ?? '?').toUpperCase()}</Text>
+                    </View>
+                }
+                <Text style={styles.profileModalUsername}>@{taggedProfile?.username}</Text>
+                <View style={styles.profileModalActions}>
+                  {taggedProfile?.userId !== loggedInUser?.id && (
+                    <TouchableOpacity
+                      style={[styles.profileModalFollowBtn]}
+                      onPress={() => {
+                        if (loggedInUser?.id && taggedProfile) {
+                          followUser(loggedInUser.id, loggedInUser.username, loggedInUser.avatarUri, taggedProfile.userId, taggedProfile.username);
+                        }
+                      }}
+                    >
+                      <Text style={styles.profileModalFollowText}>Follow</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.profileModalCloseBtn} onPress={() => setTaggedProfile(null)}>
+                    <Text style={styles.profileModalCloseTxt}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
     </View>
   );
 }
@@ -849,6 +953,23 @@ const styles = StyleSheet.create({
     ...theme.typography.body,
     padding: theme.spacing.md,
     lineHeight: 20,
+  },
+  mentionLink: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
+  photoTagDot: {
+    position: 'absolute',
+    backgroundColor: 'rgba(139,92,246,0.85)',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    transform: [{ translateX: -20 }, { translateY: -10 }],
+  },
+  photoTagDotTxt: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   actions: {
     flexDirection: 'row',

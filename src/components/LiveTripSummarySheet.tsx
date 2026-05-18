@@ -122,7 +122,7 @@ export default function LiveTripSummarySheet({
       locationArea: stopNames[0] ?? 'On the road',
       destination: stopNames.join(' → '),
       tags: ['adventure'],
-      mood: 'wanderlust',
+      mood: ['wanderlust'],
       likes: 0,
       comments: 0,
       delay: 'now',

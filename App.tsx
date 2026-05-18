@@ -143,7 +143,7 @@ function AppNavigator() {
     );
   }
 
-  const isLoggedIn = !!user?.email;
+  const isLoggedIn = !!user?.id;
 
   return (
     <NavigationContainer>

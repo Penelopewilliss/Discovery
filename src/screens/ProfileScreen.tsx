@@ -26,12 +26,12 @@ const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, getDoc, updateDoc, getDocs, collection, query, where, documentId } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, getDoc, setDoc, getDocs, collection, query, where, documentId } from 'firebase/firestore';
+import * as FileSystem from 'expo-file-system/legacy';
 import GlassCard from '../components/GlassCard';
 import { useUser } from '../context/UserContext';
 import { useNavigation } from '@react-navigation/native';
-import { PostDelay, Stamp, Post } from '../types';
+import { PostDelay, Post } from '../types';
 
 const ALL_COUNTRIES: { name: string; emoji: string }[] = [
   { name: 'Albania', emoji: '🇦🇱' }, { name: 'Argentina', emoji: '🇦🇷' },
@@ -81,11 +81,12 @@ const BADGE_COLORS = [
 ];
 
 export default function ProfileScreen() {
-  const { user: loggedInUser, setUser } = useUser();
+  const { user: loggedInUser, setUser, stamps } = useUser();
   const navigation = useNavigation();
   const [privateProfile, setPrivateProfile] = useState(false);
   const [hideLocation, setHideLocation] = useState(true);
   const [allowStoryShares, setAllowStoryShares] = useState(true);
+  const [allowTagging, setAllowTagging] = useState(true);
   const [defaultDelay, setDefaultDelay] = useState<PostDelay>('24h');
   const [showDelayPicker, setShowDelayPicker] = useState(false);
   const [showFollowersList, setShowFollowersList] = useState(false);
@@ -144,8 +145,7 @@ export default function ProfileScreen() {
   const [editBio, setEditBio] = useState(loggedInUser?.bio ?? '');
   const [editAvatar, setEditAvatar] = useState(loggedInUser?.avatarUri ?? null);
 
-  // Countries — loaded for profile stats row
-  const [stamps, setStamps] = useState<Stamp[]>([]);
+  // stamps come from UserContext — always in sync across screens
 
   // Followers / Following
   const [followerCount, setFollowerCount] = useState(0);
@@ -162,13 +162,13 @@ export default function ProfileScreen() {
     if (!firebaseUser) return;
     const uid = firebaseUser.uid;
 
-    // Load stamps and saved posts from user doc
+    // Load settings and saved posts from user doc
     getDoc(doc(db, 'users', uid)).then(async (snap) => {
       const data = snap.data() ?? {};
-      if (Array.isArray(data.stamps)) setStamps(data.stamps as Stamp[]);
       if (data.privateProfile !== undefined) setPrivateProfile(data.privateProfile);
       if (data.hideExactLocation !== undefined) setHideLocation(data.hideExactLocation);
       if (data.allowStoryShares !== undefined) setAllowStoryShares(data.allowStoryShares);
+      if (data.allowTagging !== undefined) setAllowTagging(data.allowTagging);
       const savedPostIds: string[] = data.savedPostIds ?? [];
       if (savedPostIds.length > 0) {
         const ids = savedPostIds.slice(0, 10);
@@ -180,7 +180,7 @@ export default function ProfileScreen() {
               userAvatar: pd.userAvatar ?? '', imageUrl: pd.mediaItems?.[0]?.uri ?? pd.imageUrl ?? '',
               mediaItems: pd.mediaItems ?? [], caption: pd.caption ?? '',
               locationArea: pd.locationArea ?? '', destination: pd.destination ?? '',
-              tags: pd.tags ?? [], mood: pd.mood ?? 'wanderlust',
+              tags: pd.tags ?? [], mood: Array.isArray(pd.mood) ? pd.mood : (pd.mood ? [pd.mood] : ['wanderlust']),
               likes: pd.likesCount ?? 0, comments: pd.commentsCount ?? 0,
               delay: pd.delay ?? 'now', privacy: pd.privacy ?? 'public',
               hideExactLocation: pd.hideExactLocation ?? false, blurLocation: pd.blurLocation ?? false,
@@ -268,11 +268,20 @@ export default function ProfileScreen() {
     // Upload new avatar to Firebase Storage if it's a local URI
     if (editAvatar && !editAvatar.startsWith('http') && firebaseUser) {
       try {
-        const response = await fetch(editAvatar);
-        const blob = await response.blob();
-        const avatarRef = ref(storage, `avatars/${firebaseUser.uid}/avatar.jpg`);
-        await uploadBytes(avatarRef, blob);
-        finalAvatarUri = await getDownloadURL(avatarRef);
+        const idToken = await firebaseUser.getIdToken();
+        const bucket = (storage.app.options as { storageBucket?: string }).storageBucket!;
+        const storagePath = `avatars/${firebaseUser.uid}/avatar.jpg`;
+        const encodedPath = encodeURIComponent(storagePath);
+        const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?uploadType=media&name=${encodedPath}`;
+        const result = await FileSystem.uploadAsync(uploadUrl, editAvatar, {
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          httpMethod: 'POST',
+          headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${idToken}` },
+        });
+        if (result.status >= 200 && result.status < 300) {
+          const { downloadTokens } = JSON.parse(result.body) as { downloadTokens: string };
+          finalAvatarUri = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${downloadTokens}`;
+        }
       } catch (_) {}
     }
 
@@ -289,12 +298,12 @@ export default function ProfileScreen() {
     setUser(updated);
     if (firebaseUser) {
       try {
-        await updateDoc(doc(db, 'users', firebaseUser.uid), {
+        await setDoc(doc(db, 'users', firebaseUser.uid), {
           name: updated.name,
           username: updated.username,
           bio: updated.bio,
           avatarUri: updated.avatarUri,
-        });
+        }, { merge: true });
       } catch (_) {}
     }
     setShowEdit(false);
@@ -502,7 +511,11 @@ export default function ProfileScreen() {
               </View>
               <Switch
                 value={privateProfile}
-                onValueChange={setPrivateProfile}
+                onValueChange={(v) => {
+                  setPrivateProfile(v);
+                  const uid = auth.currentUser?.uid;
+                  if (uid) setDoc(doc(db, 'users', uid), { privateProfile: v }, { merge: true }).catch(() => {});
+                }}
                 trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
                 thumbColor="#fff"
               />
@@ -515,7 +528,11 @@ export default function ProfileScreen() {
               </View>
               <Switch
                 value={hideLocation}
-                onValueChange={setHideLocation}
+                onValueChange={(v) => {
+                  setHideLocation(v);
+                  const uid = auth.currentUser?.uid;
+                  if (uid) setDoc(doc(db, 'users', uid), { hideExactLocation: v }, { merge: true }).catch(() => {});
+                }}
                 trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
                 thumbColor="#fff"
               />
@@ -532,7 +549,26 @@ export default function ProfileScreen() {
                   setAllowStoryShares(v);
                   const uid = auth.currentUser?.uid;
                   if (uid) {
-                    try { await updateDoc(doc(db, 'users', uid), { allowStoryShares: v }); } catch (_) {}
+                    try { await setDoc(doc(db, 'users', uid), { allowStoryShares: v }, { merge: true }); } catch (_) {}
+                  }
+                }}
+                trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            <View style={[styles.privacyRow, styles.borderTop]}>
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyLabel}>Allow Tagging</Text>
+                <Text style={styles.privacySub}>Let others tag you in posts and photos</Text>
+              </View>
+              <Switch
+                value={allowTagging}
+                onValueChange={async (v) => {
+                  setAllowTagging(v);
+                  const uid = auth.currentUser?.uid;
+                  if (uid) {
+                    try { await setDoc(doc(db, 'users', uid), { allowTagging: v }, { merge: true }); } catch (_) {}
                   }
                 }}
                 trackColor={{ false: theme.colors.border, true: theme.colors.primary }}

@@ -20,22 +20,26 @@ import {
   Query,
   DocumentData,
 } from 'firebase/firestore';
-import { ref, getDownloadURL } from 'firebase/storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import { db, storage, auth } from '../firebase';
 import { Post, MediaItem, Comment } from '../types';
 
 // ─── Media Upload ───────────────────────────────────────────────────────────
 
-/** Converts a local file URI to a Blob via XHR (works with file:// and content:// on React Native) */
-function uriToBlob(uri: string): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.onload = () => resolve(xhr.response as Blob);
-    xhr.onerror = () => reject(new Error('Failed to read local file'));
-    xhr.responseType = 'blob';
-    xhr.open('GET', uri, true);
-    xhr.send();
-  });
+/** Detect content-type and storage extension from a local file URI */
+function getMediaInfo(uri: string, fallbackType: 'photo' | 'video'): { ext: string; contentType: string } {
+  const lower = uri.toLowerCase();
+  if (lower.includes('.mov'))  return { ext: 'mov', contentType: 'video/quicktime' };
+  if (lower.includes('.mp4'))  return { ext: 'mp4', contentType: 'video/mp4' };
+  if (lower.includes('.m4v'))  return { ext: 'm4v', contentType: 'video/x-m4v' };
+  if (lower.includes('.png'))  return { ext: 'png', contentType: 'image/png' };
+  if (lower.includes('.gif'))  return { ext: 'gif', contentType: 'image/gif' };
+  if (lower.includes('.webp')) return { ext: 'webp', contentType: 'image/webp' };
+  if (lower.includes('.heic') || lower.includes('.heif')) return { ext: 'jpg', contentType: 'image/jpeg' };
+  if (lower.includes('.jpg') || lower.includes('.jpeg'))  return { ext: 'jpg', contentType: 'image/jpeg' };
+  return fallbackType === 'video'
+    ? { ext: 'mp4', contentType: 'video/mp4' }
+    : { ext: 'jpg', contentType: 'image/jpeg' };
 }
 
 /**
@@ -52,8 +56,6 @@ async function uploadFileToStorage(
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) throw new Error('Not authenticated — please log in and try again.');
 
-  const blob = await uriToBlob(localUri);
-
   const bucket = (storage.app.options as { storageBucket?: string }).storageBucket;
   if (!bucket) throw new Error('Firebase Storage bucket not configured.');
   const encodedPath = encodeURIComponent(storagePath);
@@ -61,18 +63,19 @@ async function uploadFileToStorage(
     `https://firebasestorage.googleapis.com/v0/b/${bucket}/o` +
     `?uploadType=media&name=${encodedPath}`;
 
-  const resp = await fetch(uploadUrl, {
-    method: 'POST',
+  // expo-file-system handles file:// and content:// URIs correctly on both
+  // iOS and Android — unlike fetch() which returns status 0 for local files.
+  const result = await FileSystem.uploadAsync(uploadUrl, localUri, {
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    httpMethod: 'POST',
     headers: { 'Content-Type': contentType, Authorization: `Bearer ${idToken}` },
-    body: blob,
   });
 
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => resp.status.toString());
-    throw new Error(`Storage error ${resp.status}: ${detail}`);
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Storage error ${result.status}: ${result.body}`);
   }
 
-  const { downloadTokens } = await resp.json() as { downloadTokens: string };
+  const { downloadTokens } = JSON.parse(result.body) as { downloadTokens: string };
   return (
     `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/` +
     `${encodedPath}?alt=media&token=${downloadTokens}`
@@ -92,15 +95,10 @@ export async function uploadPostMedia(
       uploaded.push(item);
       continue;
     }
-    try {
-      const ext = item.type === 'video' ? 'mp4' : 'jpg';
-      const contentType = item.type === 'video' ? 'video/mp4' : 'image/jpeg';
-      const storagePath = `post-media/${userId}/${postId}/${i}.${ext}`;
-      const url = await uploadFileToStorage(item.uri, storagePath, contentType);
-      uploaded.push({ uri: url, type: item.type });
-    } catch (err) {
-      throw err;
-    }
+    const { ext, contentType } = getMediaInfo(item.uri, item.type);
+    const storagePath = `post-media/${userId}/${postId}/${i}.${ext}`;
+    const url = await uploadFileToStorage(item.uri, storagePath, contentType);
+    uploaded.push({ uri: url, type: item.type });
   }
   return uploaded;
 }
@@ -172,7 +170,7 @@ export function listenToFeed(
         locationArea: data.locationArea ?? '',
         destination: data.destination ?? '',
         tags: data.tags ?? [],
-        mood: data.mood ?? 'wanderlust',
+        mood: Array.isArray(data.mood) ? data.mood : (data.mood ? [data.mood] : ['wanderlust']),
         likes: data.likesCount ?? 0,
         comments: data.commentsCount ?? 0,
         delay: data.delay ?? 'now',
@@ -188,6 +186,8 @@ export function listenToFeed(
         reactions: data.reactions ?? {},
         userReaction: reactionsByPost[d.id] ?? null,
         reactionsEnabled: data.reactionsEnabled ?? true,
+        taggedUsers: data.taggedUsers ?? [],
+        photoTags: data.photoTags ?? [],
         tripShare: data.tripShare ?? undefined,
       } as Post;
     });
@@ -303,7 +303,7 @@ export async function addCommentToFirestore(
     text,
     createdAt: serverTimestamp(),
   });
-  await updateDoc(doc(db, 'posts', postId), { commentsCount: increment(1) });
+  await updateDoc(doc(db, 'posts', postId), { comments: increment(1) });
   return {
     id: docRef.id,
     postId,
@@ -499,8 +499,7 @@ export async function saveStory(data: Omit<FirestoreStory, 'id' | 'createdAt'>):
 }
 
 export async function uploadStoryMedia(userId: string, localUri: string, type: 'photo' | 'video'): Promise<string> {
-  const ext = type === 'video' ? 'mp4' : 'jpg';
-  const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
+  const { ext, contentType } = getMediaInfo(localUri, type);
   const storagePath = `stories/${userId}/${Date.now()}.${ext}`;
   return uploadFileToStorage(localUri, storagePath, contentType);
 }

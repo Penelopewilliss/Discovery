@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -17,15 +17,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { auth, db } from '../firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+
 import GlassCard from '../components/GlassCard';
 import LeafletMapView from '../components/LeafletMapView';
 import TripShareSheet from '../components/TripShareSheet';
 import LiveTripSummarySheet from '../components/LiveTripSummarySheet';
 import CreateTripModal from '../components/CreateTripModal';
 import ExploreScreen from './ExploreScreen';
-import { useUser, Trip, CompletedLiveTrip } from '../context/UserContext';
+import { useUser, Trip, CompletedLiveTrip, VisitedPlace } from '../context/UserContext';
 import { Stamp } from '../types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -60,21 +59,80 @@ const ALL_COUNTRIES: { name: string; emoji: string }[] = [
   { name: 'Vietnam', emoji: '🇻🇳' }, { name: 'Serbia', emoji: '🇷🇸' },
 ];
 
+// Approximate country centroids for map pins
+const COUNTRY_COORDS: Record<string, { lat: number; lon: number }> = {
+  'Albania': { lat: 41.15, lon: 20.17 },
+  'Argentina': { lat: -38.42, lon: -63.62 },
+  'Australia': { lat: -25.27, lon: 133.77 },
+  'Austria': { lat: 47.52, lon: 14.55 },
+  'Bali (Indonesia)': { lat: -8.34, lon: 115.09 },
+  'Belgium': { lat: 50.50, lon: 4.47 },
+  'Brazil': { lat: -14.24, lon: -51.93 },
+  'Canada': { lat: 56.13, lon: -106.35 },
+  'China': { lat: 35.86, lon: 104.20 },
+  'Colombia': { lat: 4.57, lon: -74.30 },
+  'Croatia': { lat: 45.10, lon: 15.20 },
+  'Czech Republic': { lat: 49.82, lon: 15.47 },
+  'Denmark': { lat: 56.26, lon: 9.50 },
+  'Egypt': { lat: 26.82, lon: 30.80 },
+  'France': { lat: 46.23, lon: 2.21 },
+  'Germany': { lat: 51.17, lon: 10.45 },
+  'Greece': { lat: 39.07, lon: 21.82 },
+  'Hungary': { lat: 47.16, lon: 19.50 },
+  'Iceland': { lat: 64.96, lon: -19.02 },
+  'India': { lat: 20.59, lon: 78.96 },
+  'Indonesia': { lat: -0.79, lon: 113.92 },
+  'Ireland': { lat: 53.41, lon: -8.24 },
+  'Israel': { lat: 31.05, lon: 34.85 },
+  'Italy': { lat: 41.87, lon: 12.57 },
+  'Japan': { lat: 36.20, lon: 138.25 },
+  'Jordan': { lat: 30.59, lon: 36.24 },
+  'Kenya': { lat: -0.02, lon: 37.91 },
+  'Malaysia': { lat: 4.21, lon: 101.98 },
+  'Maldives': { lat: 3.20, lon: 73.22 },
+  'Mexico': { lat: 23.63, lon: -102.55 },
+  'Montenegro': { lat: 42.71, lon: 19.37 },
+  'Morocco': { lat: 31.79, lon: -7.09 },
+  'Netherlands': { lat: 52.13, lon: 5.29 },
+  'New Zealand': { lat: -40.90, lon: 174.89 },
+  'Norway': { lat: 60.47, lon: 8.47 },
+  'Peru': { lat: -9.19, lon: -75.02 },
+  'Philippines': { lat: 12.88, lon: 121.77 },
+  'Poland': { lat: 51.92, lon: 19.15 },
+  'Portugal': { lat: 39.40, lon: -8.22 },
+  'Romania': { lat: 45.94, lon: 24.97 },
+  'Singapore': { lat: 1.35, lon: 103.82 },
+  'Slovenia': { lat: 46.15, lon: 14.99 },
+  'South Africa': { lat: -30.56, lon: 22.94 },
+  'South Korea': { lat: 35.91, lon: 127.77 },
+  'Spain': { lat: 40.46, lon: -3.75 },
+  'Sweden': { lat: 60.13, lon: 18.64 },
+  'Switzerland': { lat: 46.82, lon: 8.23 },
+  'Thailand': { lat: 15.87, lon: 100.99 },
+  'Turkey': { lat: 38.96, lon: 35.24 },
+  'Ukraine': { lat: 48.38, lon: 31.17 },
+  'United Kingdom': { lat: 55.38, lon: -3.44 },
+  'United States': { lat: 37.09, lon: -95.71 },
+  'Vietnam': { lat: 14.06, lon: 108.28 },
+  'Serbia': { lat: 44.02, lon: 21.01 },
+};
+
 // ─── Inner tab type ────────────────────────────────────────────────────────────
 type InnerTab = 'countries' | 'explore' | 'trips' | 'planned';
 
 export default function PassportScreen() {
   const {
     visitedPlaces, trips, deleteTrip, completedLiveTrips, deleteCompletedTrip,
+    stamps, addStamp, removeStamp, markVisited,
   } = useUser();
 
   // Tabs / navigation
   const [innerTab, setInnerTab] = useState<InnerTab>('countries');
 
   // Countries (stamps)
-  const [stamps, setStamps] = useState<Stamp[]>([]);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
+  const [selectedCountries, setSelectedCountries] = useState<Set<string>>(new Set());
 
   // Map modals
   const [showTravelMap, setShowTravelMap] = useState(false);
@@ -84,34 +142,43 @@ export default function PassportScreen() {
   const [sharingTrip, setSharingTrip] = useState<Trip | null>(null);
   const [reviewingTrip, setReviewingTrip] = useState<CompletedLiveTrip | null>(null);
 
-  // Load stamps from Firestore
-  useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    getDoc(doc(db, 'users', uid)).then((snap) => {
-      const data = snap.data() ?? {};
-      if (Array.isArray(data.stamps)) setStamps(data.stamps as Stamp[]);
-    }).catch(() => {});
-  }, []);
-
-  const saveStamps = async (next: Stamp[]) => {
-    setStamps(next);
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    try { await updateDoc(doc(db, 'users', uid), { stamps: next }); } catch (_) {}
+  const toggleCountry = (name: string) => {
+    setSelectedCountries((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
   };
 
-  const addCountry = (item: { name: string; emoji: string }) => {
+  const confirmAddCountries = () => {
     const now = new Date();
     const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    saveStamps([...stamps, { country: item.name, emoji: item.emoji, visitedAt: month }]);
+    selectedCountries.forEach((name) => {
+      const item = ALL_COUNTRIES.find((c) => c.name === name);
+      if (!item) return;
+      const stamp: Stamp = { country: item.name, emoji: item.emoji, visitedAt: month };
+      addStamp(stamp);
+      const coords = COUNTRY_COORDS[item.name];
+      if (coords) {
+        markVisited({
+          id: `country_${item.name.replace(/\s+/g, '_')}`,
+          name: item.name,
+          country: item.name,
+          lat: coords.lat,
+          lon: coords.lon,
+          coverImage: '',
+          visitedAt: month,
+        });
+      }
+    });
+    setSelectedCountries(new Set());
     setShowCountryPicker(false);
   };
 
   const deleteCountry = (country: string) => {
     Alert.alert('Remove country', `Remove ${country} from your passport?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => saveStamps(stamps.filter((s) => s.country !== country)) },
+      { text: 'Remove', style: 'destructive', onPress: () => removeStamp(country) },
     ]);
   };
 
@@ -162,13 +229,13 @@ export default function PassportScreen() {
             </View>
             <View style={s.statDivider} />
             <View style={s.statBox}>
-              <Text style={s.statNum}>{new Set(stamps.map((s) => s.visitedAt?.slice(0, 4))).size || 0}</Text>
-              <Text style={s.statLabel}>Years</Text>
+              <Text style={s.statNum}>{completedLiveTrips.length + trips.length}</Text>
+              <Text style={s.statLabel}>Trips</Text>
             </View>
             <View style={s.statDivider} />
             <View style={s.statBox}>
               <Text style={s.statNum}>{visitedPlaces.length}</Text>
-              <Text style={s.statLabel}>Places</Text>
+              <Text style={s.statLabel}>Map Pins</Text>
             </View>
           </View>
 
@@ -202,6 +269,42 @@ export default function PassportScreen() {
               ))}
             </View>
           )}
+
+          {/* Map Pins list — all visited places (countries shown with flag, others with pin) */}
+          {(() => {
+            const placePins = visitedPlaces.filter((p) => !p.id.startsWith('country_'));
+            const countryPins = visitedPlaces.filter((p) => p.id.startsWith('country_'));
+            const allPins = [...placePins, ...countryPins];
+            if (allPins.length === 0) return null;
+            return (
+              <View style={{ marginTop: 24 }}>
+                <Text style={s.sectionNote}>📍 All map pins ({visitedPlaces.length} total · {placePins.length} places · {countryPins.length} countries)</Text>
+                {placePins.map((p) => (
+                  <GlassCard key={p.id} style={{ marginBottom: 8, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <Text style={{ fontSize: 22 }}>📍</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>{p.name || 'Unnamed pin'}</Text>
+                      {!!p.country && <Text style={{ color: '#a0a0b0', fontSize: 12, marginTop: 2 }}>{p.country}</Text>}
+                    </View>
+                    <Text style={{ color: '#a0a0b0', fontSize: 12 }}>{p.visitedAt?.slice(0, 7)}</Text>
+                  </GlassCard>
+                ))}
+                {countryPins.map((p) => {
+                  const stamp = stamps.find((s) => s.country === p.name);
+                  return (
+                    <GlassCard key={p.id} style={{ marginBottom: 8, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <Text style={{ fontSize: 22 }}>{stamp?.emoji ?? '🌍'}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>{p.name}</Text>
+                        <Text style={{ color: '#8b5cf6', fontSize: 12, marginTop: 2 }}>Country pin</Text>
+                      </View>
+                      <Text style={{ color: '#a0a0b0', fontSize: 12 }}>{p.visitedAt?.slice(0, 7)}</Text>
+                    </GlassCard>
+                  );
+                })}
+              </View>
+            );
+          })()}
         </ScrollView>
       )}
 
@@ -332,14 +435,16 @@ export default function PassportScreen() {
 
       {/* ─── Modals / sheets ──────────────────────────────────────────────────── */}
 
-      {/* Country picker */}
+      {/* Country picker — multi-select */}
       <Modal visible={showCountryPicker} animationType="slide" presentationStyle="pageSheet">
         <View style={s.pickerModal}>
           <View style={s.pickerHeader}>
-            <Text style={s.pickerTitle}>Add Country</Text>
-            <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
-              <Text style={s.pickerClose}>Done</Text>
+            <TouchableOpacity onPress={() => { setSelectedCountries(new Set()); setShowCountryPicker(false); }}>
+              <Text style={s.pickerClose}>Cancel</Text>
             </TouchableOpacity>
+            <Text style={s.pickerTitle}>Add Countries</Text>
+            {/* spacer to centre title */}
+            <View style={{ width: 60 }} />
           </View>
           <View style={s.pickerSearch}>
             <Text style={{ fontSize: 16 }}>🔍</Text>
@@ -358,15 +463,38 @@ export default function PassportScreen() {
               !stamps.find((st) => st.country === c.name)
             )}
             keyExtractor={(item) => item.name}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={s.pickerItem} onPress={() => addCountry(item)}>
-                <Text style={s.pickerItemEmoji}>{item.emoji}</Text>
-                <Text style={s.pickerItemName}>{item.name}</Text>
-                <Text style={s.pickerItemAdd}>+</Text>
-              </TouchableOpacity>
-            )}
+            renderItem={({ item }) => {
+              const selected = selectedCountries.has(item.name);
+              return (
+                <TouchableOpacity
+                  style={[s.pickerItem, selected && s.pickerItemSelected]}
+                  onPress={() => toggleCountry(item.name)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={s.pickerItemEmoji}>{item.emoji}</Text>
+                  <Text style={[s.pickerItemName, selected && { color: '#fff', fontWeight: '700' }]}>{item.name}</Text>
+                  <View style={[s.pickerCheckbox, selected && s.pickerCheckboxSelected]}>
+                    {selected && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>✓</Text>}
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
             keyboardShouldPersistTaps="handled"
           />
+          {/* Confirm button */}
+          <View style={s.pickerFooter}>
+            <TouchableOpacity
+              style={[s.pickerConfirmBtn, selectedCountries.size === 0 && s.pickerConfirmBtnDisabled]}
+              onPress={confirmAddCountries}
+              disabled={selectedCountries.size === 0}
+            >
+              <Text style={s.pickerConfirmText}>
+                {selectedCountries.size === 0
+                  ? 'Select countries above'
+                  : `Add ${selectedCountries.size} countr${selectedCountries.size === 1 ? 'y' : 'ies'}`}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
@@ -584,6 +712,25 @@ const s = StyleSheet.create({
     paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.colors.border,
   },
   pickerItemEmoji: { fontSize: 24, width: 36 },
-  pickerItemName: { flex: 1, color: '#fff', fontSize: 15 },
+  pickerItemName: { flex: 1, color: theme.colors.textSecondary, fontSize: 15 },
+  pickerItemSelected: { backgroundColor: 'rgba(124,92,252,0.15)' },
+  pickerCheckbox: {
+    width: 24, height: 24, borderRadius: 12,
+    borderWidth: 2, borderColor: theme.colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  pickerCheckboxSelected: {
+    backgroundColor: theme.colors.primary, borderColor: theme.colors.primary,
+  },
+  pickerFooter: {
+    padding: 16, borderTopWidth: 1, borderTopColor: theme.colors.border,
+    paddingBottom: 32,
+  },
+  pickerConfirmBtn: {
+    backgroundColor: theme.colors.primary, borderRadius: theme.borderRadius.full,
+    paddingVertical: 16, alignItems: 'center',
+  },
+  pickerConfirmBtnDisabled: { backgroundColor: theme.colors.surface },
+  pickerConfirmText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   pickerItemAdd: { color: theme.colors.primary, fontSize: 22, fontWeight: '300' },
 });

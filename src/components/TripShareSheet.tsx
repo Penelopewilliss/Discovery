@@ -102,7 +102,7 @@ export default function TripShareSheet({ trip, onClose }: Props) {
       locationArea: stopNames[0] ?? 'Unknown',
       destination: stopNames.join(' → '),
       tags: ['adventure'],
-      mood: 'wanderlust',
+      mood: ['wanderlust'],
       likes: 0,
       likesCount: 0,
       comments: 0,
