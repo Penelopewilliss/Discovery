@@ -94,8 +94,8 @@ function MainApp() {
       <View style={styles.screen}>
         {showCreate ? <CreatePostScreen /> : <MainScreen name={activeTab} />}
       </View>
-      {/* Floating create button */}
-      <TouchableOpacity
+      {/* Floating create button — Feed tab only */}
+      {(activeTab === 'Feed' || showCreate) && <TouchableOpacity
         style={[styles.fab, { bottom: insets.bottom + 24 }]}
         onPress={handleFab}
         activeOpacity={0.85}
@@ -103,7 +103,7 @@ function MainApp() {
         <LinearGradient colors={[theme.colors.primary, theme.colors.accent]} style={styles.fabGrad}>
           <Text style={styles.fabIcon}>{showCreate ? '✕' : '+'}</Text>
         </LinearGradient>
-      </TouchableOpacity>
+      </TouchableOpacity>}
     </View>
   );
 }
