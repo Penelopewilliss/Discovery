@@ -64,13 +64,14 @@ function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolea
       const lons = coords.map((c) => c.lon);
       const minLat = Math.min(...lats), maxLat = Math.max(...lats);
       const minLon = Math.min(...lons), maxLon = Math.max(...lons);
-      const padLat = Math.max(0.1, (maxLat - minLat) * 0.5);
-      const padLon = Math.max(0.15, (maxLon - minLon) * 0.5);
+      // Use 2× padding vs PostCard so the full route fits in the small cell
+      const padLat = Math.max(0.5, (maxLat - minLat) * 1.2);
+      const padLon = Math.max(0.6, (maxLon - minLon) * 1.2);
       const mapRegion: LRegion = {
         latitude: (minLat + maxLat) / 2,
         longitude: (minLon + maxLon) / 2,
-        latitudeDelta: Math.max(0.4, maxLat - minLat + padLat * 2),
-        longitudeDelta: Math.max(0.5, maxLon - minLon + padLon * 2),
+        latitudeDelta: Math.max(2.0, maxLat - minLat + padLat * 2),
+        longitudeDelta: Math.max(2.5, maxLon - minLon + padLon * 2),
       };
       const polyline = coords.map((c) => ({ latitude: c.lat, longitude: c.lon }));
       return (
