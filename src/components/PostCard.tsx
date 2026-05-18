@@ -28,7 +28,7 @@ import {
   likePost, unlikePost, savePost, unsavePost,
   addCommentToFirestore, loadComments, setReaction,
   followUser, unfollowUser, checkFollowing, saveStory,
-  deletePostFromFirestore, archivePostInFirestore,
+  deletePostFromFirestore, archivePostInFirestore, updatePostPrivacyInFirestore,
 } from '../services/postsService';
 import { useUser } from '../context/UserContext';
 import { db } from '../firebase';
@@ -92,6 +92,7 @@ export default function PostCard({ post, onUpdate, onDelete, onArchive }: PostCa
   const [liked, setLiked] = useState(post.liked);
   const [saved, setSaved] = useState(post.saved);
   const [likes, setLikes] = useState(post.likes);
+  const [privacy, setPrivacy] = useState(post.privacy ?? 'public');
   const [userReaction, setUserReaction] = useState<string | null>(post.userReaction);
   const [reactions, setReactions] = useState<Record<string, number>>(post.reactions ?? {});
   const [showComments, setShowComments] = useState(false);
@@ -282,9 +283,18 @@ export default function PostCard({ post, onUpdate, onDelete, onArchive }: PostCa
           }
           <View style={styles.headerInfo}>
             <Text style={styles.username}>@{post.username}</Text>
-            <Text style={styles.location}>
-              📍 {post.blurLocation ? post.locationArea.split(',')[0].trim() + ' region' : post.locationArea}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.location}>
+                📍 {post.blurLocation ? post.locationArea.split(',')[0].trim() + ' region' : post.locationArea}
+              </Text>
+              {isOwnPost && (
+                <View style={styles.privacyBadge}>
+                  <Text style={styles.privacyBadgeText}>
+                    {privacy === 'public' ? '🌐' : privacy === 'followers' ? '👥' : privacy === 'private' ? '🔒' : '👥'}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         </TouchableOpacity>
         {!isOwnPost && (
@@ -313,7 +323,36 @@ export default function PostCard({ post, onUpdate, onDelete, onArchive }: PostCa
             onPress={() => {
               Alert.alert('Post options', undefined, [
                 {
-                  text: '📦 Move to Archive',
+                  text: '� Change privacy',
+                  onPress: () => {
+                    const PRIVACY_OPTS = [
+                      { label: '🌐 Public — everyone can see this', value: 'public' },
+                      { label: '👥 Followers only', value: 'followers' },
+                      { label: '🔒 Only me', value: 'private' },
+                    ] as const;
+                    Alert.alert(
+                      'Who can see this post?',
+                      `Currently: ${privacy === 'public' ? '🌐 Public' : privacy === 'followers' ? '👥 Followers only' : '🔒 Only me'}`,
+                      [
+                        ...PRIVACY_OPTS.map((opt) => ({
+                          text: opt.label,
+                          onPress: async () => {
+                            setPrivacy(opt.value);
+                            try {
+                              await updatePostPrivacyInFirestore(post.id, opt.value);
+                            } catch {
+                              setPrivacy(privacy);
+                              Alert.alert('Error', 'Could not update privacy. Try again.');
+                            }
+                          },
+                        })),
+                        { text: 'Cancel', style: 'cancel' as const },
+                      ],
+                    );
+                  },
+                },
+                {
+                  text: '�📦 Move to Archive',
                   onPress: () => {
                     Alert.alert('Archive post?', 'It will be hidden from your feed and saved in your archive.', [
                       { text: 'Cancel', style: 'cancel' },
@@ -811,6 +850,17 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryLight,
     ...theme.typography.tiny,
     textTransform: 'capitalize',
+  },
+  privacyBadge: {
+    backgroundColor: theme.colors.glass,
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: theme.colors.glassBorder,
+  },
+  privacyBadgeText: {
+    fontSize: 11,
   },
   moreBtn: {
     paddingHorizontal: 6,

@@ -127,6 +127,10 @@ export async function unarchivePostInFirestore(postId: string): Promise<void> {
   await updateDoc(doc(db, 'posts', postId), { archived: false });
 }
 
+export async function updatePostPrivacyInFirestore(postId: string, privacy: string): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), { privacy });
+}
+
 // ─── Feed Listener ──────────────────────────────────────────────────────────
 
 export function listenToFeed(

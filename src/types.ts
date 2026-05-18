@@ -32,7 +32,7 @@ export type PostDelay =
   | 'after leaving'
   | 'after trip';
 
-export type PrivacyLevel = 'public' | 'followers' | 'group';
+export type PrivacyLevel = 'public' | 'followers' | 'group' | 'private';
 
 export type TravelMood =
   | 'wanderlust'
