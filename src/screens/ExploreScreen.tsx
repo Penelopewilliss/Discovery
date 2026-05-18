@@ -175,12 +175,7 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
   useEffect(() => {
     if (!query.trim()) {
       setSearchResults([]);
-      // Restore the view mode the user was in before searching
-      setViewMode(preSearchViewMode.current);
-      // Fly back to user location when returning to map
-      if (preSearchViewMode.current === 'map' && userLocation) {
-        mapRef.current?.flyTo(userLocation.latitude, userLocation.longitude, 4);
-      }
+      if (userLocation) mapRef.current?.flyTo(userLocation.latitude, userLocation.longitude, 4);
       return;
     }
     clearTimeout(searchTimer.current);
@@ -260,6 +255,19 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
     setTripStops([]);
     setTripSearch('');
     Alert.alert('✈️ Trip saved!', 'View it on your Profile under "My Trips".');
+  };
+
+  /** Tapping a search dropdown result: fly map to it, clear the query */
+  const handleSearchResultSelect = (place: Place) => {
+    Keyboard.dismiss();
+    setQuery('');
+    if (place.lat && place.lon) {
+      setViewMode('map');
+      // Brief delay so keyboard dismissal animates before the map flies
+      setTimeout(() => mapRef.current?.flyTo(place.lat!, place.lon!, 8), 150);
+    } else {
+      handleSelectPlace(place);
+    }
   };
 
   const handleSelectPlace = async (place: Place) => {
@@ -420,11 +428,6 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
           placeholderTextColor={theme.colors.textMuted}
           value={query}
           onChangeText={setQuery}
-          onFocus={() => {
-            // Switch to grid so results are visible above the keyboard
-            preSearchViewMode.current = viewMode;
-            setViewMode('grid');
-          }}
           returnKeyType="search"
           onSubmitEditing={Keyboard.dismiss}
         />
@@ -437,16 +440,8 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
         ) : null}
       </View>
 
-      {/* Search results count badge shown in map mode */}
-      {viewMode === 'map' && query.trim().length > 0 && !searchLoading && (
-        <View style={styles.searchResultsBadge}>
-          <Text style={styles.searchResultsBadgeText}>
-            {searchResults.length > 0
-              ? `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} — tap a pin to explore`
-              : 'No destinations found'}
-          </Text>
-        </View>
-      )}
+      {/* Content area — map/grid with floating search dropdown */}
+      <View style={{ flex: 1, position: 'relative' }}>
 
       {/* Map View */}
       {viewMode === 'map' && (
@@ -676,6 +671,41 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
           )}
         </>
       )}
+
+      {/* Search dropdown — floats above map/grid, visible above the keyboard */}
+      {query.trim().length > 0 && (
+        <View style={styles.searchDropdown}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            style={{ maxHeight: 300 }}
+          >
+            {searchLoading ? (
+              <ActivityIndicator color={theme.colors.primary} style={{ margin: 20 }} />
+            ) : searchResults.length === 0 ? (
+              <View style={styles.dropdownEmpty}>
+                <Text style={styles.dropdownEmptyText}>No destinations found</Text>
+              </View>
+            ) : (
+              searchResults.map((place) => (
+                <TouchableOpacity
+                  key={place.id}
+                  style={styles.dropdownItem}
+                  onPress={() => handleSearchResultSelect(place)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.dropdownItemName}>{place.name}</Text>
+                    {!!place.country && <Text style={styles.dropdownItemCountry}>{place.country}</Text>}
+                  </View>
+                  <Text style={styles.dropdownItemArrow}>→</Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      </View> {/* end content area */}
 
       {/* ═══ Trip Planner Modal ═══ */}
       <Modal visible={showTripPlanner} animationType="slide" presentationStyle="fullScreen">
@@ -1155,6 +1185,53 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontSize: 12,
     fontWeight: '600',
+  },
+  searchDropdown: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: theme.colors.surface ?? theme.colors.background,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    zIndex: 999,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border ?? 'rgba(255,255,255,0.08)',
+  },
+  dropdownItemName: {
+    color: theme.colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  dropdownItemCountry: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  dropdownItemArrow: {
+    color: theme.colors.primary,
+    fontSize: 18,
+    marginLeft: 8,
+  },
+  dropdownEmpty: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  dropdownEmptyText: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
   },
   featuredSection: {
     marginBottom: theme.spacing.sm,
