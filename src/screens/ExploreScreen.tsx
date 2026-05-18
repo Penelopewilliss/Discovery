@@ -164,6 +164,10 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
   useEffect(() => {
     if (!query.trim()) {
       setSearchResults([]);
+      // Fly back to user location (or world view) when search is cleared
+      if (userLocation) {
+        mapRef.current?.flyTo(userLocation.latitude, userLocation.longitude, 4);
+      }
       return;
     }
     clearTimeout(searchTimer.current);
@@ -176,8 +180,14 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
       try {
         const results = await searchFsqPlaces(query, signal);
         if (!signal.aborted) {
-          setSearchResults(results.map((r) => fsqToPlace(r, '')));
+          const places = results.map((r) => fsqToPlace(r, ''));
+          setSearchResults(places);
           setSearchLoading(false);
+          // Fly the map to the first result that has coordinates
+          const first = places.find((p) => p.lat && p.lon);
+          if (first?.lat && first?.lon) {
+            mapRef.current?.flyTo(first.lat, first.lon, 5);
+          }
         }
       } catch {
         if (!searchAbortRef.current?.signal.aborted) setSearchLoading(false);
@@ -398,12 +408,25 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
           value={query}
           onChangeText={setQuery}
         />
-        {query.length > 0 && (
+        {searchLoading && query.length > 0 ? (
+          <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginRight: 4 }} />
+        ) : query.length > 0 ? (
           <TouchableOpacity onPress={() => setQuery('')}>
             <Text style={styles.clearIcon}>✕</Text>
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
+
+      {/* Search results count badge shown in map mode */}
+      {viewMode === 'map' && query.trim().length > 0 && !searchLoading && (
+        <View style={styles.searchResultsBadge}>
+          <Text style={styles.searchResultsBadgeText}>
+            {searchResults.length > 0
+              ? `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} — tap a pin to explore`
+              : 'No destinations found'}
+          </Text>
+        </View>
+      )}
 
       {/* Map View */}
       {viewMode === 'map' && (
@@ -422,7 +445,7 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
             }
             userLocation={userLocation}
             markers={[
-              ...featured.filter((p) => p.lat && p.lon).map((place) => ({
+              ...(query.trim() ? [] : featured).filter((p) => p.lat && p.lon).map((place) => ({
                 id: place.id,
                 latitude: place.lat!,
                 longitude: place.lon!,
@@ -1097,6 +1120,20 @@ const styles = StyleSheet.create({
   clearIcon: {
     color: theme.colors.textMuted,
     fontSize: 14,
+  },
+  searchResultsBadge: {
+    backgroundColor: 'rgba(99,102,241,0.15)',
+    borderRadius: 8,
+    marginHorizontal: theme.spacing.md,
+    marginBottom: 6,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  searchResultsBadgeText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
   },
   featuredSection: {
     marginBottom: theme.spacing.sm,

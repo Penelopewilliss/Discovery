@@ -10,6 +10,7 @@ import { WebView } from 'react-native-webview';
 
 export interface LeafletMapRef {
   updateUserLocation: (lat: number, lng: number) => void;
+  flyTo: (lat: number, lng: number, zoom?: number) => void;
 }
 
 export interface LMarker {
@@ -72,6 +73,11 @@ const LeafletMapView = forwardRef<LeafletMapRef, Props>(({
             }).addTo(map);
           } else { window._locDot.setLatLng([${lat},${lng}]); }
         })(); true;
+      `);
+    },
+    flyTo(lat: number, lng: number, zoom = 5) {
+      webViewRef.current?.injectJavaScript(`
+        map.flyTo([${lat},${lng}], ${zoom}, { animate: true, duration: 1 }); true;
       `);
     },
   }));
