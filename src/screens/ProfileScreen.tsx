@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Image,
+  ActivityIndicator,
   TouchableOpacity,
   Switch,
   TextInput,
@@ -23,6 +24,43 @@ import { Dimensions } from 'react-native';
 const SCREEN_W = Dimensions.get('window').width;
 // 3 items × 2px margin each = 6px total; no negative margin on postsGrid
 const GRID_ITEM_SIZE = Math.floor((SCREEN_W - 6) / 3);
+
+/** Thumbnail cell used in the profile photo grid */
+function GridThumb({ uri, size, dim }: { uri: string | null; size: number; dim?: boolean }) {
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  if (!uri) {
+    return (
+      <View style={{ width: size, height: size, backgroundColor: '#1a1a30', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 24, opacity: dim ? 0.5 : 1 }}>🗺️</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{ width: size, height: size, backgroundColor: '#1a1a30' }}>
+      {!errored && (
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size, opacity: dim ? 0.6 : 1 }}
+          resizeMode="cover"
+          onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
+        />
+      )}
+      {!loaded && !errored && (
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+          <ActivityIndicator size="small" color="#555" />
+        </View>
+      )}
+      {errored && (
+        <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1a30' }}>
+          <Text style={{ fontSize: 24, opacity: dim ? 0.5 : 1 }}>🔧</Text>
+        </View>
+      )}
+    </View>
+  );
+}
 
 import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
@@ -235,6 +273,7 @@ export default function ProfileScreen() {
           liked: false, saved: false, reactions: pd.reactions ?? {}, userReaction: null,
           reactionsEnabled: pd.reactionsEnabled ?? true,
           archived: pd.archived ?? false,
+          tripShare: pd.tripShare ?? undefined,
         } as Post;
       });
       const sorted = mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -661,21 +700,15 @@ export default function ProfileScreen() {
             ) : (
               <View style={styles.postsGrid}>
                 {myPosts.map((post) => {
-                  const rawUrl = post.mediaItems?.[0]?.uri ?? post.imageUrl ?? '';
-                  const thumb = rawUrl.startsWith('http') ? rawUrl : null;
+                  const rawUrl = (
+                    post.mediaItems?.find(m => m.uri?.startsWith('http'))?.uri ??
+                    (post.imageUrl?.startsWith('http') ? post.imageUrl : null) ??
+                    post.tripShare?.mapImageUrl ??
+                    null
+                  );
                   return (
                     <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
-                      {thumb ? (
-                        <Image
-                          source={{ uri: thumb }}
-                          style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE }}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface }}>
-                          <Text style={{ fontSize: 28 }}>🗺️</Text>
-                        </View>
-                      )}
+                      <GridThumb uri={rawUrl} size={GRID_ITEM_SIZE} />
                       {post.mediaItems && post.mediaItems.length > 1 && (
                         <View style={styles.gridMultiBadge}>
                           <Text style={styles.gridMultiBadgeText}>⧉</Text>
@@ -701,8 +734,12 @@ export default function ProfileScreen() {
             ) : (
               <View style={styles.postsGrid}>
                 {archivedPosts.map((post) => {
-                  const rawUrl = post.mediaItems?.[0]?.uri ?? post.imageUrl ?? '';
-                  const thumb = rawUrl.startsWith('http') ? rawUrl : null;
+                  const rawUrl = (
+                    post.mediaItems?.find(m => m.uri?.startsWith('http'))?.uri ??
+                    (post.imageUrl?.startsWith('http') ? post.imageUrl : null) ??
+                    post.tripShare?.mapImageUrl ??
+                    null
+                  );
                   return (
                     <TouchableOpacity
                       key={post.id}
@@ -747,17 +784,7 @@ export default function ProfileScreen() {
                         ]);
                       }}
                     >
-                      {thumb ? (
-                        <Image
-                          source={{ uri: thumb }}
-                          style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, opacity: 0.6 }}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surface, opacity: 0.6 }}>
-                          <Text style={{ fontSize: 28 }}>🗺️</Text>
-                        </View>
-                      )}
+                      <GridThumb uri={rawUrl} size={GRID_ITEM_SIZE} dim />
                       <View style={styles.archiveBadge}>
                         <Text style={styles.archiveBadgeText}>📦</Text>
                       </View>
