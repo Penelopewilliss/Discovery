@@ -90,11 +90,11 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
     const mapUrl = post.tripShare.mapImageUrl?.startsWith('http') ? post.tripShare.mapImageUrl : null;
     if (mapUrl && !errored) {
       return (
-        <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, backgroundColor: '#0f172a' }}>
+        <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, backgroundColor: '#0a0a12' }}>
           <Image
             source={{ uri: mapUrl }}
             style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, opacity }}
-            resizeMode="cover"
+            resizeMode="contain"
             onLoad={() => setLoaded(true)}
             onError={() => setErrored(true)}
           />
@@ -127,11 +127,11 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
 
   if (photoUri && !errored) {
     return (
-      <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, backgroundColor: '#1a1a30' }}>
+      <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, backgroundColor: '#0a0a12' }}>
         <Image
           source={{ uri: photoUri }}
           style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, opacity }}
-          resizeMode="cover"
+          resizeMode="contain"
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
         />
