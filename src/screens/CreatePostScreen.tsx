@@ -171,11 +171,12 @@ export default function CreatePostScreen() {
       if (mediaItems.length > 0) {
         try {
           uploadedMedia = await uploadPostMedia(user.id, postId, mediaItems);
-        } catch {
+        } catch (err: any) {
           setPosting(false);
           Alert.alert(
             'Photo upload failed',
-            'Could not upload your photo. Check your connection and try again.',
+            err?.message ?? 'Could not upload your photo. Check your connection and try again.',
+          );
           );
           return;
         }

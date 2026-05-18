@@ -20,22 +20,63 @@ import {
   Query,
   DocumentData,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { ref, getDownloadURL } from 'firebase/storage';
+import { db, storage, auth } from '../firebase';
 import { Post, MediaItem, Comment } from '../types';
 
 // ─── Media Upload ───────────────────────────────────────────────────────────
 
-/** Reliably converts a local file URI to a Blob in React Native (fetch().blob() is unreliable) */
+/** Converts a local file URI to a Blob via XHR (works with file:// and content:// on React Native) */
 function uriToBlob(uri: string): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.onload = () => resolve(xhr.response as Blob);
-    xhr.onerror = reject;
+    xhr.onerror = () => reject(new Error('Failed to read local file'));
     xhr.responseType = 'blob';
     xhr.open('GET', uri, true);
     xhr.send();
   });
+}
+
+/**
+ * Upload a local file URI to Firebase Storage via the REST API.
+ * Using the REST API with an explicit Bearer token is more reliable in
+ * React Native / Expo Go than the JS SDK's uploadBytes (which can silently
+ * drop the auth header in some environments).
+ */
+async function uploadFileToStorage(
+  localUri: string,
+  storagePath: string,
+  contentType: string,
+): Promise<string> {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) throw new Error('Not authenticated — please log in and try again.');
+
+  const blob = await uriToBlob(localUri);
+
+  const bucket = (storage.app.options as { storageBucket?: string }).storageBucket;
+  if (!bucket) throw new Error('Firebase Storage bucket not configured.');
+  const encodedPath = encodeURIComponent(storagePath);
+  const uploadUrl =
+    `https://firebasestorage.googleapis.com/v0/b/${bucket}/o` +
+    `?uploadType=media&name=${encodedPath}`;
+
+  const resp = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType, Authorization: `Bearer ${idToken}` },
+    body: blob,
+  });
+
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => resp.status.toString());
+    throw new Error(`Storage error ${resp.status}: ${detail}`);
+  }
+
+  const { downloadTokens } = await resp.json() as { downloadTokens: string };
+  return (
+    `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/` +
+    `${encodedPath}?alt=media&token=${downloadTokens}`
+  );
 }
 
 export async function uploadPostMedia(
@@ -52,16 +93,12 @@ export async function uploadPostMedia(
       continue;
     }
     try {
-      const blob = await uriToBlob(item.uri);
       const ext = item.type === 'video' ? 'mp4' : 'jpg';
       const contentType = item.type === 'video' ? 'video/mp4' : 'image/jpeg';
-      const storageRef = ref(storage, `post-media/${userId}/${postId}/${i}.${ext}`);
-      await uploadBytes(storageRef, blob, { contentType });
-      const url = await getDownloadURL(storageRef);
+      const storagePath = `post-media/${userId}/${postId}/${i}.${ext}`;
+      const url = await uploadFileToStorage(item.uri, storagePath, contentType);
       uploaded.push({ uri: url, type: item.type });
     } catch (err) {
-      // Re-throw so the caller can surface the error to the user instead of
-      // silently storing an unresolvable local file:// URI in Firestore.
       throw err;
     }
   }
@@ -462,12 +499,10 @@ export async function saveStory(data: Omit<FirestoreStory, 'id' | 'createdAt'>):
 }
 
 export async function uploadStoryMedia(userId: string, localUri: string, type: 'photo' | 'video'): Promise<string> {
-  const blob = await uriToBlob(localUri);
   const ext = type === 'video' ? 'mp4' : 'jpg';
   const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
-  const storyRef = ref(storage, `stories/${userId}/${Date.now()}.${ext}`);
-  await uploadBytes(storyRef, blob, { contentType });
-  return getDownloadURL(storyRef);
+  const storagePath = `stories/${userId}/${Date.now()}.${ext}`;
+  return uploadFileToStorage(localUri, storagePath, contentType);
 }
 
 export function listenToStories(
