@@ -326,9 +326,20 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
       ) : (
       /* Image / Carousel (also used when mapIncluded — imageUrl is the static map) */
       (() => {
-        const items: MediaItem[] = post.mediaItems && post.mediaItems.length > 0
+        const rawItems: MediaItem[] = post.mediaItems && post.mediaItems.length > 0
           ? post.mediaItems
           : [{ uri: post.imageUrl, type: 'photo' }];
+        // Filter out local file:// URIs — they are unresolvable on other devices
+        const items = rawItems.filter((m) => m.uri && m.uri.startsWith('http'));
+        if (items.length === 0) {
+          // Post had media but upload URI is invalid — show a neutral placeholder
+          return (
+            <View style={[styles.imageContainer, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a2e' }]}>
+              <Text style={{ fontSize: 32 }}>🖼️</Text>
+              <Text style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Image unavailable</Text>
+            </View>
+          );
+        }
         const isMulti = items.length > 1;
 
         const slideW = cardWidth > 0 ? cardWidth : width;

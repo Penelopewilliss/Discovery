@@ -59,9 +59,10 @@ export async function uploadPostMedia(
       await uploadBytes(storageRef, blob, { contentType });
       const url = await getDownloadURL(storageRef);
       uploaded.push({ uri: url, type: item.type });
-    } catch {
-      // Keep original URI if upload fails
-      uploaded.push(item);
+    } catch (err) {
+      // Re-throw so the caller can surface the error to the user instead of
+      // silently storing an unresolvable local file:// URI in Firestore.
+      throw err;
     }
   }
   return uploaded;

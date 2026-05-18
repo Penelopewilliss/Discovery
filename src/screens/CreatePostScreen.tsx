@@ -167,9 +167,19 @@ export default function CreatePostScreen() {
       const postId = `post_${Date.now()}`;
 
       // Upload media to Firebase Storage
-      const uploadedMedia = mediaItems.length > 0
-        ? await uploadPostMedia(user.id, postId, mediaItems)
-        : [];
+      let uploadedMedia: typeof mediaItems = [];
+      if (mediaItems.length > 0) {
+        try {
+          uploadedMedia = await uploadPostMedia(user.id, postId, mediaItems);
+        } catch {
+          setPosting(false);
+          Alert.alert(
+            'Photo upload failed',
+            'Could not upload your photo. Check your connection and try again.',
+          );
+          return;
+        }
+      }
 
       const postData = {
         id: postId,
