@@ -13,13 +13,27 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { mockPlaces } from '../data/mockData';
 import { Place, Post } from '../types';
 import { auth, db } from '../firebase';
 import { collection, query as fsQuery, orderBy, limit, getDocs } from 'firebase/firestore';
 import { followUser, unfollowUser, checkFollowing } from '../services/postsService';
 import { useUser } from '../context/UserContext';
 import GlassCard from '../components/GlassCard';
+import { getFeaturedPlaces, searchFsqPlaces, FsqPlace, FsqPlaceWithPhoto } from '../utils/foursquare';
+
+function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
+  return {
+    id: raw.fsq_id,
+    name: raw.name,
+    country: raw.location.country ?? raw.location.locality ?? '',
+    coverImage: photoUrl,
+    followersCount: raw.stats?.total_ratings ?? 0,
+    trendingPosts: [], travelTips: [], safetyNotes: [],
+    followed: false,
+    lat: raw.geocodes?.main?.latitude,
+    lon: raw.geocodes?.main?.longitude,
+  };
+}
 
 const { width } = Dimensions.get('window');
 
@@ -40,6 +54,50 @@ export default function SearchScreen() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [allUsers, setAllUsers] = useState<Array<{ id: string; username: string; name: string; avatar: string | null; bio: string }>>([]);
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [placesLoading, setPlacesLoading] = useState(true);
+  const placeSearchTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const placeAbortRef = React.useRef<AbortController>();
+  // Load featured places on mount
+  useEffect(() => {
+    getFeaturedPlaces().then((results: FsqPlaceWithPhoto[]) => {
+      setPlaces(results.map((r) => fsqToPlace(r, r.photoUrl)));
+      setPlacesLoading(false);
+    }).catch(() => setPlacesLoading(false));
+  }, []);
+
+  // Search places via Foursquare when query changes
+  useEffect(() => {
+    if (!q) {
+      // Reset to featured when query clears
+      setPlacesLoading(true);
+      getFeaturedPlaces().then((results: FsqPlaceWithPhoto[]) => {
+        setPlaces(results.map((r) => fsqToPlace(r, r.photoUrl)));
+        setPlacesLoading(false);
+      }).catch(() => setPlacesLoading(false));
+      return;
+    }
+    clearTimeout(placeSearchTimer.current);
+    placeSearchTimer.current = setTimeout(async () => {
+      placeAbortRef.current?.abort();
+      placeAbortRef.current = new AbortController();
+      const { signal } = placeAbortRef.current;
+      setPlacesLoading(true);
+      try {
+        const results = await searchFsqPlaces(q, signal);
+        if (!signal.aborted) {
+          setPlaces(results.map((r) => fsqToPlace(r, '')));
+          setPlacesLoading(false);
+        }
+      } catch {
+        if (!placeAbortRef.current?.signal.aborted) setPlacesLoading(false);
+      }
+    }, 400);
+    return () => {
+      clearTimeout(placeSearchTimer.current);
+      placeAbortRef.current?.abort();
+    };
+  }, [q]);
 
   // Load posts from Firestore on mount
   useEffect(() => {
@@ -89,17 +147,7 @@ export default function SearchScreen() {
     [allUsers]
   );
 
-  const filteredPlaces = useMemo(
-    () =>
-      q
-        ? mockPlaces.filter(
-            (p) =>
-              p.name.toLowerCase().includes(q) ||
-              p.country.toLowerCase().includes(q)
-          )
-        : mockPlaces,
-    [q]
-  );
+  const filteredPlaces = places;
 
   const filteredPosts = useMemo(() => {
     if (!q) return [];

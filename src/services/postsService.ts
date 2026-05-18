@@ -81,14 +81,13 @@ export function listenToFeed(
 
     // Build query: filter to followed users if any, else global
     let postsQuery: Query;
+    // Include own posts + followed users; Firestore 'in' supports up to 30 items
     if (followeeIds.length > 0) {
-      // Firestore 'in' supports up to 30 items; slice if needed
-      const ids = followeeIds.slice(0, 30);
-      // No orderBy with 'in' — would need a composite index; sort client-side
+      const ids = [...new Set([userId, ...followeeIds])].slice(0, 30);
       postsQuery = query(
         collection(db, 'posts'),
         where('userId', 'in', ids),
-        limit(40)
+        limit(60)
       );
     } else {
       postsQuery = query(
