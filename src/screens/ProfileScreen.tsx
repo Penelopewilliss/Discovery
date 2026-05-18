@@ -20,22 +20,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { Dimensions } from 'react-native';
+import LeafletMapView, { LMarker, LRegion } from '../components/LeafletMapView';
 
 const SCREEN_W = Dimensions.get('window').width;
 // 3 items × 2px margin each = 6px total; no negative margin on postsGrid
 const GRID_ITEM_SIZE = Math.floor((SCREEN_W - 6) / 3);
-
-/** Convert lat/lon to an ESRI World Street Map tile URL (no auth, works in RN Image) */
-function mapTileUrl(lat: number, lon: number, zoom = 8): string {
-  const z = zoom;
-  const x = Math.floor(((lon + 180) / 360) * Math.pow(2, z));
-  const sinLat = Math.sin((lat * Math.PI) / 180);
-  const y = Math.floor(
-    (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * Math.pow(2, z),
-  );
-  // ESRI tiles work in React Native without custom headers (note: y before x)
-  return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`;
-}
 
 /** Thumbnail cell used in the profile photo grid — mirrors PostCard's 3 rendering modes */
 function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolean }) {
@@ -58,20 +47,47 @@ function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolea
     );
   }
 
-  // ── Mode 2: Trip with map ─────────────────────────────────────────────────
+  // ── Mode 2: Trip with map — render the same LeafletMapView as PostCard ────
   if (post.tripShare?.mapIncluded) {
-    // Prefer stored static image, fall back to computed OSM tile from stop coords
     const coords = post.tripShare.stopCoords;
-    const centerLat = coords && coords.length > 0
-      ? coords.reduce((s, c) => s + c.lat, 0) / coords.length
-      : null;
-    const centerLon = coords && coords.length > 0
-      ? coords.reduce((s, c) => s + c.lon, 0) / coords.length
-      : null;
-    const mapUrl =
-      (post.tripShare.mapImageUrl?.startsWith('http') ? post.tripShare.mapImageUrl : null) ??
-      (centerLat !== null && centerLon !== null ? mapTileUrl(centerLat, centerLon) : null);
-
+    if (coords && coords.length > 0) {
+      const names = post.tripShare.stops;
+      const COLORS = ['#6366f1', '#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ec4899'];
+      const mapMarkers: LMarker[] = coords.map((c, i) => ({
+        id: `gm_${i}`,
+        latitude: c.lat,
+        longitude: c.lon,
+        color: COLORS[i % COLORS.length],
+        label: names[i] ?? `Stop ${i + 1}`,
+      }));
+      const lats = coords.map((c) => c.lat);
+      const lons = coords.map((c) => c.lon);
+      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+      const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+      const padLat = Math.max(0.1, (maxLat - minLat) * 0.5);
+      const padLon = Math.max(0.15, (maxLon - minLon) * 0.5);
+      const mapRegion: LRegion = {
+        latitude: (minLat + maxLat) / 2,
+        longitude: (minLon + maxLon) / 2,
+        latitudeDelta: Math.max(0.4, maxLat - minLat + padLat * 2),
+        longitudeDelta: Math.max(0.5, maxLon - minLon + padLon * 2),
+      };
+      const polyline = coords.map((c) => ({ latitude: c.lat, longitude: c.lon }));
+      return (
+        <View style={{ width: size, height: size, overflow: 'hidden', opacity }}>
+          <LeafletMapView
+            style={{ width: size, height: size }}
+            region={mapRegion}
+            markers={mapMarkers}
+            polylineCoords={polyline.length > 1 ? polyline : undefined}
+            polylineColor="#6366f1"
+            interactive={false}
+          />
+        </View>
+      );
+    }
+    // mapIncluded but no coords — try stored static image URL
+    const mapUrl = post.tripShare.mapImageUrl?.startsWith('http') ? post.tripShare.mapImageUrl : null;
     if (mapUrl && !errored) {
       return (
         <View style={{ width: size, height: size, backgroundColor: '#0f172a' }}>
@@ -87,14 +103,10 @@ function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolea
               <ActivityIndicator size="small" color="#555" />
             </View>
           )}
-          {/* Map pin overlay so it's recognisable as a map */}
-          <View style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 4, padding: 2 }}>
-            <Text style={{ fontSize: 10 }}>🗺️</Text>
-          </View>
         </View>
       );
     }
-    // No coordinates either — show map-style gradient
+    // No coordinates, no image — show map-style gradient
     return (
       <LinearGradient
         colors={['#0f2027', '#203a43', '#2c5364']}
