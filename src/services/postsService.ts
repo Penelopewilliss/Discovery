@@ -54,8 +54,9 @@ export async function uploadPostMedia(
     try {
       const blob = await uriToBlob(item.uri);
       const ext = item.type === 'video' ? 'mp4' : 'jpg';
+      const contentType = item.type === 'video' ? 'video/mp4' : 'image/jpeg';
       const storageRef = ref(storage, `post-media/${userId}/${postId}/${i}.${ext}`);
-      await uploadBytes(storageRef, blob);
+      await uploadBytes(storageRef, blob, { contentType });
       const url = await getDownloadURL(storageRef);
       uploaded.push({ uri: url, type: item.type });
     } catch {
@@ -76,6 +77,10 @@ export async function createPostInFirestore(post: Omit<Post, 'liked' | 'saved'>)
     commentsCount: post.comments ?? 0,
   });
   return docRef.id;
+}
+
+export async function deletePostFromFirestore(postId: string): Promise<void> {
+  await deleteDoc(doc(db, 'posts', postId));
 }
 
 // ─── Feed Listener ──────────────────────────────────────────────────────────
@@ -458,8 +463,9 @@ export async function saveStory(data: Omit<FirestoreStory, 'id' | 'createdAt'>):
 export async function uploadStoryMedia(userId: string, localUri: string, type: 'photo' | 'video'): Promise<string> {
   const blob = await uriToBlob(localUri);
   const ext = type === 'video' ? 'mp4' : 'jpg';
+  const contentType = type === 'video' ? 'video/mp4' : 'image/jpeg';
   const storyRef = ref(storage, `stories/${userId}/${Date.now()}.${ext}`);
-  await uploadBytes(storyRef, blob);
+  await uploadBytes(storyRef, blob, { contentType });
   return getDownloadURL(storyRef);
 }
 

@@ -26,6 +26,7 @@ import {
   likePost, unlikePost, savePost, unsavePost,
   addCommentToFirestore, loadComments, setReaction,
   followUser, unfollowUser, checkFollowing, saveStory,
+  deletePostFromFirestore,
 } from '../services/postsService';
 import { useUser } from '../context/UserContext';
 import { db } from '../firebase';
@@ -58,9 +59,10 @@ const DELAY_LABELS: Record<PostDelay, string | null> = {
 interface PostCardProps {
   post: Post;
   onUpdate: () => void;
+  onDelete?: () => void;
 }
 
-export default function PostCard({ post, onUpdate }: PostCardProps) {
+export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
   const { user: loggedInUser } = useUser();
   const isOwnPost = post.userId === loggedInUser?.id || post.userId === 'user_1';
   const [following, setFollowing] = useState(false);
@@ -254,6 +256,40 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
         <View style={styles.moodBadge}>
           <Text style={styles.moodText}>{post.mood}</Text>
         </View>
+        {isOwnPost && (
+          <TouchableOpacity
+            onPress={() => {
+              Alert.alert('Post options', undefined, [
+                {
+                  text: 'Delete post',
+                  style: 'destructive',
+                  onPress: () => {
+                    Alert.alert('Delete post?', 'This cannot be undone.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            await deletePostFromFirestore(post.id);
+                            onDelete?.();
+                          } catch {
+                            Alert.alert('Error', 'Could not delete post. Try again.');
+                          }
+                        },
+                      },
+                    ]);
+                  },
+                },
+                { text: 'Cancel', style: 'cancel' },
+              ]);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.moreBtn}
+          >
+            <Text style={styles.moreBtnText}>⋯</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Trip Card Visual — gradient card when no map; image+strip when map included */}
@@ -601,6 +637,16 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryLight,
     ...theme.typography.tiny,
     textTransform: 'capitalize',
+  },
+  moreBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  moreBtnText: {
+    color: theme.colors.textSecondary,
+    fontSize: 18,
+    letterSpacing: 2,
   },
   followBtn: {
     paddingHorizontal: 12,

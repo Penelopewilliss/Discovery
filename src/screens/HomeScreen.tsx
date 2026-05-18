@@ -1105,7 +1105,13 @@ export default function HomeScreen() {
       <FlatList
         data={isLoading ? [] : filtered}
         keyExtractor={(item) => item.id + tick.toString()}
-        renderItem={({ item }) => <PostCard post={item} onUpdate={forceUpdate} />}
+        renderItem={({ item }) => (
+            <PostCard
+              post={item}
+              onUpdate={forceUpdate}
+              onDelete={() => setFeedPosts((prev) => prev.filter((p) => p.id !== item.id))}
+            />
+          )}
         contentContainerStyle={styles.feed}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
