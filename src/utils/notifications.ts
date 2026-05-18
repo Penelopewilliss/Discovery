@@ -1,13 +1,28 @@
 /**
  * Notification helpers.
- * expo-notifications requires a development build — these are safe no-ops in Expo Go.
+ * expo-notifications requires a development build on Android — these are safe no-ops in Expo Go.
  */
 
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+
+/** True when running inside the Expo Go client (not a standalone / dev-client build) */
+const isExpoGo = Constants.appOwnership === 'expo';
+
+/** Dynamically import expo-notifications, skipping entirely in Expo Go on Android */
+async function loadNotifications() {
+  if (isExpoGo && Platform.OS === 'android') return null;
+  try {
+    return await import('expo-notifications');
+  } catch {
+    return null;
+  }
+}
 
 export async function registerForPushNotifications(userId: string): Promise<string | null> {
   try {
-    const Notifications = await import('expo-notifications');
+    const Notifications = await loadNotifications();
+    if (!Notifications) return null;
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
@@ -45,7 +60,8 @@ export async function scheduleLocalNotification(
   _data?: Record<string, unknown>
 ): Promise<void> {
   try {
-    const Notifications = await import('expo-notifications');
+    const Notifications = await loadNotifications();
+    if (!Notifications) return;
     await Notifications.scheduleNotificationAsync({
       content: { title: _title, body: _body, data: _data ?? {} },
       trigger: null,
@@ -58,7 +74,8 @@ export async function scheduleDelayedPostNotification(
   delaySeconds: number
 ): Promise<void> {
   try {
-    const Notifications = await import('expo-notifications');
+    const Notifications = await loadNotifications();
+    if (!Notifications) return;
     await Notifications.scheduleNotificationAsync({
       content: {
         title: '✈️ Your post is now live!',
