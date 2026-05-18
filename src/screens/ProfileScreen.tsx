@@ -37,7 +37,7 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
     return (
       <LinearGradient
         colors={['#2d1b69', '#1a1a4e', '#0f172a']}
-        style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', padding: 4, opacity }]}
+        style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', padding: 4, opacity }}
       >
         <Text style={{ fontSize: 18 }}>✈️</Text>
         <Text numberOfLines={2} style={{ color: '#fff', fontSize: 9, fontWeight: '700', textAlign: 'center', marginTop: 2 }}>
@@ -64,7 +64,6 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
       const lons = coords.map((c) => c.lon);
       const minLat = Math.min(...lats), maxLat = Math.max(...lats);
       const minLon = Math.min(...lons), maxLon = Math.max(...lons);
-      // Use 2× padding vs PostCard so the full route fits in the small cell
       const padLat = Math.max(0.5, (maxLat - minLat) * 1.2);
       const padLon = Math.max(0.6, (maxLon - minLon) * 1.2);
       const mapRegion: LRegion = {
@@ -75,7 +74,7 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
       };
       const polyline = coords.map((c) => ({ latitude: c.lat, longitude: c.lon }));
       return (
-        <View style={[StyleSheet.absoluteFill, { overflow: 'hidden', opacity }]}>
+        <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, overflow: 'hidden', opacity }}>
           <LeafletMapView
             style={{ flex: 1 }}
             region={mapRegion}
@@ -91,10 +90,10 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
     const mapUrl = post.tripShare.mapImageUrl?.startsWith('http') ? post.tripShare.mapImageUrl : null;
     if (mapUrl && !errored) {
       return (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0f172a' }]}>
+        <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, backgroundColor: '#0f172a' }}>
           <Image
             source={{ uri: mapUrl }}
-            style={[StyleSheet.absoluteFill, { opacity }]}
+            style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, opacity }}
             resizeMode="cover"
             onLoad={() => setLoaded(true)}
             onError={() => setErrored(true)}
@@ -111,7 +110,7 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
     return (
       <LinearGradient
         colors={['#0f2027', '#203a43', '#2c5364']}
-        style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', opacity }]}
+        style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', opacity }}
       >
         <Text style={{ fontSize: 20 }}>🗺️</Text>
         <Text numberOfLines={1} style={{ color: '#fff', fontSize: 8, marginTop: 2, textAlign: 'center' }}>
@@ -128,10 +127,10 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
 
   if (photoUri && !errored) {
     return (
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1a30' }]}>
+      <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, backgroundColor: '#1a1a30' }}>
         <Image
           source={{ uri: photoUri }}
-          style={[StyleSheet.absoluteFill, { opacity }]}
+          style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, opacity }}
           resizeMode="cover"
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
@@ -149,7 +148,7 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
   return (
     <LinearGradient
       colors={['#1a1a30', '#12121a']}
-      style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', opacity }]}
+      style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, alignItems: 'center', justifyContent: 'center', opacity }}
     >
       <Text style={{ fontSize: 20 }}>📍</Text>
       {!!(post.destination || post.locationArea) && (
