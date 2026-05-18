@@ -25,6 +25,17 @@ const SCREEN_W = Dimensions.get('window').width;
 // 3 items × 2px margin each = 6px total; no negative margin on postsGrid
 const GRID_ITEM_SIZE = Math.floor((SCREEN_W - 6) / 3);
 
+/** Convert lat/lon to an OSM tile URL (zoom 8 ≈ city/region view) */
+function osmTileUrl(lat: number, lon: number, zoom = 8): string {
+  const z = zoom;
+  const x = Math.floor(((lon + 180) / 360) * Math.pow(2, z));
+  const sinLat = Math.sin((lat * Math.PI) / 180);
+  const y = Math.floor(
+    (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * Math.pow(2, z),
+  );
+  return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+}
+
 /** Thumbnail cell used in the profile photo grid — mirrors PostCard's 3 rendering modes */
 function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolean }) {
   const [loaded, setLoaded] = useState(false);
@@ -48,8 +59,19 @@ function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolea
 
   // ── Mode 2: Trip with map ─────────────────────────────────────────────────
   if (post.tripShare?.mapIncluded) {
-    const mapUrl = post.tripShare.mapImageUrl;
-    if (mapUrl?.startsWith('http') && !errored) {
+    // Prefer stored static image, fall back to computed OSM tile from stop coords
+    const coords = post.tripShare.stopCoords;
+    const centerLat = coords && coords.length > 0
+      ? coords.reduce((s, c) => s + c.lat, 0) / coords.length
+      : null;
+    const centerLon = coords && coords.length > 0
+      ? coords.reduce((s, c) => s + c.lon, 0) / coords.length
+      : null;
+    const mapUrl =
+      (post.tripShare.mapImageUrl?.startsWith('http') ? post.tripShare.mapImageUrl : null) ??
+      (centerLat !== null && centerLon !== null ? osmTileUrl(centerLat, centerLon) : null);
+
+    if (mapUrl && !errored) {
       return (
         <View style={{ width: size, height: size, backgroundColor: '#0f172a' }}>
           <Image
@@ -64,10 +86,14 @@ function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolea
               <ActivityIndicator size="small" color="#555" />
             </View>
           )}
+          {/* Map pin overlay so it's recognisable as a map */}
+          <View style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 4, padding: 2 }}>
+            <Text style={{ fontSize: 10 }}>🗺️</Text>
+          </View>
         </View>
       );
     }
-    // No static map image — show a map-style gradient
+    // No coordinates either — show map-style gradient
     return (
       <LinearGradient
         colors={['#0f2027', '#203a43', '#2c5364']}
