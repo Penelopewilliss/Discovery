@@ -25,40 +25,99 @@ const SCREEN_W = Dimensions.get('window').width;
 // 3 items × 2px margin each = 6px total; no negative margin on postsGrid
 const GRID_ITEM_SIZE = Math.floor((SCREEN_W - 6) / 3);
 
-/** Thumbnail cell used in the profile photo grid */
-function GridThumb({ uri, size, dim }: { uri: string | null; size: number; dim?: boolean }) {
+/** Thumbnail cell used in the profile photo grid — mirrors PostCard's 3 rendering modes */
+function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
+  const opacity = dim ? 0.6 : 1;
 
-  if (!uri) {
+  // ── Mode 1: Trip card (tripShare without map) ─────────────────────────────
+  if (post.tripShare && !post.tripShare.mapIncluded) {
     return (
-      <View style={{ width: size, height: size, backgroundColor: '#1a1a30', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 24, opacity: dim ? 0.5 : 1 }}>🗺️</Text>
-      </View>
+      <LinearGradient
+        colors={['#2d1b69', '#1a1a4e', '#0f172a']}
+        style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', padding: 4, opacity }}
+      >
+        <Text style={{ fontSize: 18 }}>✈️</Text>
+        <Text numberOfLines={2} style={{ color: '#fff', fontSize: 9, fontWeight: '700', textAlign: 'center', marginTop: 2 }}>
+          {post.tripShare.tripName ?? post.destination}
+        </Text>
+      </LinearGradient>
     );
   }
-  return (
-    <View style={{ width: size, height: size, backgroundColor: '#1a1a30' }}>
-      {!errored && (
+
+  // ── Mode 2: Trip with map ─────────────────────────────────────────────────
+  if (post.tripShare?.mapIncluded) {
+    const mapUrl = post.tripShare.mapImageUrl;
+    if (mapUrl?.startsWith('http') && !errored) {
+      return (
+        <View style={{ width: size, height: size, backgroundColor: '#0f172a' }}>
+          <Image
+            source={{ uri: mapUrl }}
+            style={{ width: size, height: size, opacity }}
+            resizeMode="cover"
+            onLoad={() => setLoaded(true)}
+            onError={() => setErrored(true)}
+          />
+          {!loaded && (
+            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+              <ActivityIndicator size="small" color="#555" />
+            </View>
+          )}
+        </View>
+      );
+    }
+    // No static map image — show a map-style gradient
+    return (
+      <LinearGradient
+        colors={['#0f2027', '#203a43', '#2c5364']}
+        style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity }}
+      >
+        <Text style={{ fontSize: 20 }}>🗺️</Text>
+        <Text numberOfLines={1} style={{ color: '#fff', fontSize: 8, marginTop: 2, textAlign: 'center' }}>
+          {post.destination ?? ''}
+        </Text>
+      </LinearGradient>
+    );
+  }
+
+  // ── Mode 3: Photo / video ─────────────────────────────────────────────────
+  const photoUri =
+    post.mediaItems?.find(m => m.uri?.startsWith('http'))?.uri ??
+    (post.imageUrl?.startsWith('http') ? post.imageUrl : null);
+
+  if (photoUri && !errored) {
+    return (
+      <View style={{ width: size, height: size, backgroundColor: '#1a1a30' }}>
         <Image
-          source={{ uri }}
-          style={{ width: size, height: size, opacity: dim ? 0.6 : 1 }}
+          source={{ uri: photoUri }}
+          style={{ width: size, height: size, opacity }}
           resizeMode="cover"
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
         />
+        {!loaded && (
+          <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+            <ActivityIndicator size="small" color="#555" />
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // ── Fallback: no media at all ─────────────────────────────────────────────
+  return (
+    <LinearGradient
+      colors={['#1a1a30', '#12121a']}
+      style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity }}
+    >
+      <Text style={{ fontSize: 20 }}>📍</Text>
+      {!!(post.destination || post.locationArea) && (
+        <Text numberOfLines={2} style={{ color: '#888', fontSize: 8, textAlign: 'center', marginTop: 2, paddingHorizontal: 4 }}>
+          {post.destination || post.locationArea}
+        </Text>
       )}
-      {!loaded && !errored && (
-        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-          <ActivityIndicator size="small" color="#555" />
-        </View>
-      )}
-      {errored && (
-        <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1a30' }}>
-          <Text style={{ fontSize: 24, opacity: dim ? 0.5 : 1 }}>🔧</Text>
-        </View>
-      )}
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -699,24 +758,16 @@ export default function ProfileScreen() {
               </View>
             ) : (
               <View style={styles.postsGrid}>
-                {myPosts.map((post) => {
-                  const rawUrl = (
-                    post.mediaItems?.find(m => m.uri?.startsWith('http'))?.uri ??
-                    (post.imageUrl?.startsWith('http') ? post.imageUrl : null) ??
-                    post.tripShare?.mapImageUrl ??
-                    null
-                  );
-                  return (
-                    <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
-                      <GridThumb uri={rawUrl} size={GRID_ITEM_SIZE} />
-                      {post.mediaItems && post.mediaItems.length > 1 && (
-                        <View style={styles.gridMultiBadge}>
-                          <Text style={styles.gridMultiBadgeText}>⧉</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
+                {myPosts.map((post) => (
+                  <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
+                    <GridThumb post={post} size={GRID_ITEM_SIZE} />
+                    {post.mediaItems && post.mediaItems.length > 1 && (
+                      <View style={styles.gridMultiBadge}>
+                        <Text style={styles.gridMultiBadgeText}>⧉</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
               </View>
             )}
           </View>
@@ -733,19 +784,12 @@ export default function ProfileScreen() {
               </View>
             ) : (
               <View style={styles.postsGrid}>
-                {archivedPosts.map((post) => {
-                  const rawUrl = (
-                    post.mediaItems?.find(m => m.uri?.startsWith('http'))?.uri ??
-                    (post.imageUrl?.startsWith('http') ? post.imageUrl : null) ??
-                    post.tripShare?.mapImageUrl ??
-                    null
-                  );
-                  return (
-                    <TouchableOpacity
-                      key={post.id}
-                      style={styles.gridItem}
-                      activeOpacity={0.85}
-                      onPress={() => {
+                {archivedPosts.map((post) => (
+                  <TouchableOpacity
+                    key={post.id}
+                    style={styles.gridItem}
+                    activeOpacity={0.85}
+                    onPress={() => {
                         Alert.alert('Archived post', undefined, [
                           {
                             text: '↩ Restore to profile',
@@ -784,13 +828,12 @@ export default function ProfileScreen() {
                         ]);
                       }}
                     >
-                      <GridThumb uri={rawUrl} size={GRID_ITEM_SIZE} dim />
+                      <GridThumb post={post} size={GRID_ITEM_SIZE} dim />
                       <View style={styles.archiveBadge}>
                         <Text style={styles.archiveBadgeText}>📦</Text>
                       </View>
                     </TouchableOpacity>
-                  );
-                })}
+                  ))}
               </View>
             )}
           </View>
