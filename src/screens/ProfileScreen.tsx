@@ -25,15 +25,16 @@ const SCREEN_W = Dimensions.get('window').width;
 // 3 items × 2px margin each = 6px total; no negative margin on postsGrid
 const GRID_ITEM_SIZE = Math.floor((SCREEN_W - 6) / 3);
 
-/** Convert lat/lon to an OSM tile URL (zoom 8 ≈ city/region view) */
-function osmTileUrl(lat: number, lon: number, zoom = 8): string {
+/** Convert lat/lon to an ESRI World Street Map tile URL (no auth, works in RN Image) */
+function mapTileUrl(lat: number, lon: number, zoom = 8): string {
   const z = zoom;
   const x = Math.floor(((lon + 180) / 360) * Math.pow(2, z));
   const sinLat = Math.sin((lat * Math.PI) / 180);
   const y = Math.floor(
     (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * Math.pow(2, z),
   );
-  return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+  // ESRI tiles work in React Native without custom headers (note: y before x)
+  return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`;
 }
 
 /** Thumbnail cell used in the profile photo grid — mirrors PostCard's 3 rendering modes */
@@ -69,7 +70,7 @@ function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolea
       : null;
     const mapUrl =
       (post.tripShare.mapImageUrl?.startsWith('http') ? post.tripShare.mapImageUrl : null) ??
-      (centerLat !== null && centerLon !== null ? osmTileUrl(centerLat, centerLon) : null);
+      (centerLat !== null && centerLon !== null ? mapTileUrl(centerLat, centerLon) : null);
 
     if (mapUrl && !errored) {
       return (
