@@ -166,7 +166,7 @@ export default function TripShareSheet({ trip, onClose }: Props) {
 
           {/* Map toggle */}
           <View style={styles.mapToggleRow}>
-            <Text style={styles.mapToggleLabel}>\ud83d\uddfa\ufe0f  Include map with route</Text>
+            <Text style={styles.mapToggleLabel}>🗺️  Include map with route</Text>
             <Switch
               value={includeMap}
               onValueChange={setIncludeMap}
@@ -187,9 +187,9 @@ export default function TripShareSheet({ trip, onClose }: Props) {
                 interactive={false}
               />
               <View style={styles.mapOverlay}>
-                <Text style={styles.mapOverlayName} numberOfLines={1}>\u2708\ufe0f  {trip.name}</Text>
+                <Text style={styles.mapOverlayName} numberOfLines={1}>✈️  {trip.name}</Text>
                 <Text style={styles.mapOverlayMeta}>
-                  {trip.stops.length} stops \u00b7 {countries.length} countr{countries.length !== 1 ? 'ies' : 'y'} \u00b7 HiddenGems
+                  {trip.stops.length} stops · {countries.length} countr{countries.length !== 1 ? 'ies' : 'y'} · HiddenGems
                 </Text>
               </View>
             </View>
@@ -200,15 +200,15 @@ export default function TripShareSheet({ trip, onClose }: Props) {
               end={{ x: 1, y: 1 }}
               style={styles.previewCard}
             >
-              <Text style={styles.previewEmoji}>\u2708\ufe0f</Text>
+              <Text style={styles.previewEmoji}>✈️</Text>
               <Text style={styles.previewTripName} numberOfLines={1}>{trip.name}</Text>
               <Text style={styles.previewMeta}>
-                {trip.stops.length} stops \u00b7 {countries.length} countr{countries.length !== 1 ? 'ies' : 'y'}
+                {trip.stops.length} stops · {countries.length} countr{countries.length !== 1 ? 'ies' : 'y'}
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
                 {stopNames.slice(0, 4).map((name, i) => (
                   <View key={i} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {i > 0 && <Text style={styles.arrow}>  \u2192  </Text>}
+                    {i > 0 && <Text style={styles.arrow}>  →  </Text>}
                     <View style={styles.stopPill}>
                       <Text style={styles.stopName} numberOfLines={1}>{name}</Text>
                     </View>
@@ -216,7 +216,7 @@ export default function TripShareSheet({ trip, onClose }: Props) {
                 ))}
                 {trip.stops.length > 4 && <Text style={styles.more}>  +{trip.stops.length - 4}</Text>}
               </View>
-              <Text style={styles.watermark}>HiddenGems \u00b7 Trip Plan</Text>
+              <Text style={styles.watermark}>HiddenGems · Trip Plan</Text>
             </LinearGradient>
           )}
 
@@ -248,11 +248,11 @@ export default function TripShareSheet({ trip, onClose }: Props) {
           </View>
 
           <TouchableOpacity style={styles.feedBtn} onPress={shareToFeed}>
-            <Text style={styles.feedBtnText}>\ud83d\udcf0  Post to Feed</Text>
+            <Text style={styles.feedBtnText}>📰  Post to Feed</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.storyBtn} onPress={shareAsStory}>
-            <Text style={styles.storyBtnText}>\ud83d\udcf8  Share as Story</Text>
+            <Text style={styles.storyBtnText}>📸  Share as Story</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>

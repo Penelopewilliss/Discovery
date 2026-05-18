@@ -168,7 +168,7 @@ export default function LiveTripSummarySheet({
             {mode === 'end' ? (isManual ? '📤 Share Past Trip' : '🏁 End Live Trip') : '📍 Your Stops'}
           </Text>
           <Text style={styles.sub}>
-            {trip.name} \u00b7 {trip.pins.length} stop
+            {trip.name} · {trip.pins.length} stop
             {trip.pins.length !== 1 ? 's' : ''}
           </Text>
 
@@ -186,7 +186,7 @@ export default function LiveTripSummarySheet({
             </View>
           ) : (
             <View style={[styles.mapWrap, styles.mapEmpty]}>
-              <Text style={{ fontSize: 36 }}>\ud83d\uddfa\ufe0f</Text>
+              <Text style={{ fontSize: 36 }}>🗺️</Text>
               <Text style={styles.mapEmptyText}>No stops dropped yet</Text>
             </View>
           )}
@@ -208,7 +208,7 @@ export default function LiveTripSummarySheet({
                     />
                   ) : (
                     <View style={[styles.stopPhoto, styles.stopPhotoEmpty]}>
-                      <Text style={{ fontSize: 24 }}>\ud83d\udccd</Text>
+                      <Text style={{ fontSize: 24 }}>📍</Text>
                     </View>
                   )}
                   <View
@@ -234,7 +234,7 @@ export default function LiveTripSummarySheet({
 
           {trip.pins.length === 0 && (
             <Text style={styles.emptyHint}>
-              Go back to the map and tap "\ud83d\udcf8 Drop Stop" to add your first stop!
+              Go back to the map and tap "📸 Drop Stop" to add your first stop!
             </Text>
           )}
 
@@ -260,7 +260,7 @@ export default function LiveTripSummarySheet({
                     style={styles.shareBtnInner}
                   >
                     <Text style={styles.shareBtnText}>
-                      \ud83d\udce4  Share to Feed
+                      📤  Share to Feed
                       {withPhotos.length > 0
                         ? ` (${withPhotos.length} photo${withPhotos.length !== 1 ? 's' : ''})`
                         : ''}
