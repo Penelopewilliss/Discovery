@@ -26,7 +26,8 @@ const SCREEN = Dimensions.get('window');
 import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, getDoc, setDoc, getDocs, collection, query, where, documentId } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, limit } from 'firebase/firestore';
+import { FirestoreStory } from '../services/postsService';
 import * as FileSystem from 'expo-file-system/legacy';
 import GlassCard from '../components/GlassCard';
 import { useUser } from '../context/UserContext';
@@ -91,7 +92,10 @@ export default function ProfileScreen() {
   const [showDelayPicker, setShowDelayPicker] = useState(false);
   const [showFollowersList, setShowFollowersList] = useState(false);
   const [showFollowingList, setShowFollowingList] = useState(false);
-  const [selectedSavedPost, setSelectedSavedPost] = useState<Post | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [myPosts, setMyPosts] = useState<Post[]>([]);
+  const [myStories, setMyStories] = useState<FirestoreStory[]>([]);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
 
   const handleLogout = () => {
@@ -153,45 +157,19 @@ export default function ProfileScreen() {
   const [followers, setFollowers] = useState<Array<{ id: string; username: string; avatar: string | null }>>([]);
   const [following, setFollowing] = useState<Array<{ id: string; username: string; avatar: string | null }>>([]);
 
-  // Saved posts
-  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
-
   // Load data from Firestore on mount
   useEffect(() => {
     const firebaseUser = auth.currentUser;
     if (!firebaseUser) return;
     const uid = firebaseUser.uid;
 
-    // Load settings and saved posts from user doc
-    getDoc(doc(db, 'users', uid)).then(async (snap) => {
+    // Load settings from user doc
+    getDoc(doc(db, 'users', uid)).then((snap) => {
       const data = snap.data() ?? {};
       if (data.privateProfile !== undefined) setPrivateProfile(data.privateProfile);
       if (data.hideExactLocation !== undefined) setHideLocation(data.hideExactLocation);
       if (data.allowStoryShares !== undefined) setAllowStoryShares(data.allowStoryShares);
       if (data.allowTagging !== undefined) setAllowTagging(data.allowTagging);
-      const savedPostIds: string[] = data.savedPostIds ?? [];
-      if (savedPostIds.length > 0) {
-        const ids = savedPostIds.slice(0, 10);
-        getDocs(query(collection(db, 'posts'), where(documentId(), 'in', ids))).then((postsSnap) => {
-          setSavedPosts(postsSnap.docs.map((d) => {
-            const pd = d.data();
-            return {
-              id: d.id, userId: pd.userId ?? '', username: pd.username ?? '',
-              userAvatar: pd.userAvatar ?? '', imageUrl: pd.mediaItems?.[0]?.uri ?? pd.imageUrl ?? '',
-              mediaItems: pd.mediaItems ?? [], caption: pd.caption ?? '',
-              locationArea: pd.locationArea ?? '', destination: pd.destination ?? '',
-              tags: pd.tags ?? [], mood: Array.isArray(pd.mood) ? pd.mood : (pd.mood ? [pd.mood] : ['wanderlust']),
-              likes: pd.likesCount ?? 0, comments: pd.commentsCount ?? 0,
-              delay: pd.delay ?? 'now', privacy: pd.privacy ?? 'public',
-              hideExactLocation: pd.hideExactLocation ?? false, blurLocation: pd.blurLocation ?? false,
-              hideStayLocation: pd.hideStayLocation ?? false,
-              createdAt: pd.createdAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
-              liked: false, saved: true, reactions: pd.reactions ?? {}, userReaction: null,
-              reactionsEnabled: pd.reactionsEnabled ?? true,
-            } as Post;
-          }));
-        }).catch(() => {});
-      }
     }).catch(() => {});
 
     // Load follower / following counts
@@ -211,6 +189,47 @@ export default function ProfileScreen() {
         username: (d.data().followeeUsername as string) ?? 'traveller',
         avatar: (d.data().followeeAvatar as string | null) ?? null,
       })));
+    }).catch(() => {});
+
+    // Load the user's own posts
+    getDocs(query(collection(db, 'posts'), where('userId', '==', uid), orderBy('createdAt', 'desc'), limit(50))).then((snap) => {
+      setMyPosts(snap.docs.map((d) => {
+        const pd = d.data();
+        return {
+          id: d.id, userId: pd.userId ?? '', username: pd.username ?? '',
+          userAvatar: pd.userAvatar ?? '',
+          imageUrl: pd.mediaItems?.[0]?.uri ?? pd.imageUrl ?? '',
+          mediaItems: pd.mediaItems ?? [], caption: pd.caption ?? '',
+          locationArea: pd.locationArea ?? '', destination: pd.destination ?? '',
+          tags: pd.tags ?? [], mood: Array.isArray(pd.mood) ? pd.mood : (pd.mood ? [pd.mood] : ['wanderlust']),
+          likes: pd.likesCount ?? 0, comments: pd.commentsCount ?? 0,
+          delay: pd.delay ?? 'now', privacy: pd.privacy ?? 'public',
+          hideExactLocation: pd.hideExactLocation ?? false, blurLocation: pd.blurLocation ?? false,
+          hideStayLocation: pd.hideStayLocation ?? false,
+          createdAt: pd.createdAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+          liked: false, saved: false, reactions: pd.reactions ?? {}, userReaction: null,
+          reactionsEnabled: pd.reactionsEnabled ?? true,
+        } as Post;
+      }));
+    }).catch(() => {});
+
+    // Load the user's own stories (last 18 h)
+    getDocs(query(collection(db, 'stories'), where('userId', '==', uid), limit(20))).then((snap) => {
+      const EXPIRY_MS = 18 * 60 * 60 * 1000;
+      const cutoff = Date.now() - EXPIRY_MS;
+      const stories = snap.docs.map((d) => {
+        const data = d.data();
+        const createdAt = data.createdAt?.toMillis?.() ?? Date.now();
+        if (createdAt < cutoff) return null;
+        return {
+          id: d.id, userId: data.userId ?? '', username: data.username ?? '',
+          userAvatar: data.userAvatar ?? null, image: data.image ?? null,
+          videoUri: data.videoUri ?? null, overlayText: data.overlayText ?? null,
+          location: data.location ?? null, music: data.music ?? null,
+          mentions: data.mentions ?? [], createdAt,
+        } as FirestoreStory;
+      }).filter(Boolean) as FirestoreStory[];
+      setMyStories(stories.sort((a, b) => b.createdAt - a.createdAt));
     }).catch(() => {});
   }, []);
 
@@ -419,12 +438,17 @@ export default function ProfileScreen() {
           <Text style={styles.username}>{username ? `@${username}` : 'Set your username'}</Text>
           {!!bio && <Text style={styles.bio}>{bio}</Text>}
 
-          {/* Edit Profile button */}
-          <TouchableOpacity style={styles.editBtn} onPress={openEdit}>
-            <Text style={styles.editBtnText}>✏️  Edit Profile</Text>
-          </TouchableOpacity>
+          {/* Action buttons */}
+          <View style={styles.profileActions}>
+            <TouchableOpacity style={styles.editBtn} onPress={openEdit}>
+              <Text style={styles.editBtnText}>✏️  Edit Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
+              <Text style={styles.settingsBtnText}>⚙️</Text>
+            </TouchableOpacity>
+          </View>
 
-          {/* Stats rows */}
+          {/* Stats row */}
           <View style={styles.statsBlock}>
             <View style={styles.statsRow}>
               <TouchableOpacity style={styles.stat} onPress={() => setShowFollowersList(true)}>
@@ -436,200 +460,76 @@ export default function ProfileScreen() {
                 <Text style={styles.statValue}>{followingCount}</Text>
                 <Text style={styles.statLabel}>Following</Text>
               </TouchableOpacity>
-            </View>
-            <View style={[styles.statsRow, { marginTop: 1 }]}>
+              <View style={styles.statDivider} />
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{stamps.length}</Text>
                 <Text style={styles.statLabel}>Countries</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.stat}>
-                <Text style={styles.statValue}>{savedPosts.length}</Text>
-                <Text style={styles.statLabel}>Saved</Text>
+                <Text style={styles.statValue}>{myPosts.length}</Text>
+                <Text style={styles.statLabel}>Posts</Text>
               </View>
             </View>
           </View>
 
-          {/* Travel style badges */}
-          <View style={styles.badgesSection}>
-            <Text style={styles.sectionTitle}>Travel Style</Text>
-            <View style={styles.badgeRow}>
-              {(loggedInUser?.interests ?? []).map((badge, i) => (
-                <LinearGradient
-                  key={badge}
-                  colors={BADGE_COLORS[i % BADGE_COLORS.length] as [string, string]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.badge}
-                >
-                  <Text style={styles.badgeText}>{badge}</Text>
-                </LinearGradient>
-              ))}
-            </View>
-          </View>
-
-          {/* Travel Passport — open the 🛂 Passport tab for full details */}
-          <GlassCard style={styles.passportCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text style={{ fontSize: 32 }}>🛂</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Travel Passport</Text>
-                <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginTop: 3 }}>
-                  {stamps.length} countr{stamps.length !== 1 ? 'ies' : 'y'} visited — open the Passport tab for your map, trips & countries
-                </Text>
-              </View>
-              <Text style={{ color: theme.colors.primary, fontSize: 24 }}>›</Text>
-            </View>
-          </GlassCard>
-
-          {/* Saved Posts */}
-          {savedPosts.length > 0 && (
-            <View style={styles.savedSection}>
-              <Text style={styles.sectionTitle}>🔖 Saved Posts</Text>
-              {savedPosts.map((post) => (
-                <TouchableOpacity key={post.id} onPress={() => setSelectedSavedPost(post)} activeOpacity={0.8}>
-                  <GlassCard style={styles.savedCard}>
-                    <Image source={{ uri: post.imageUrl }} style={styles.savedImage} resizeMode="cover" />
-                    <View style={styles.savedInfo}>
-                      <Text style={styles.savedDestination}>{post.destination}</Text>
-                      <Text style={styles.savedCaption} numberOfLines={2}>{post.caption}</Text>
+          {/* My Stories */}
+          {myStories.length > 0 && (
+            <View style={styles.storiesSection}>
+              <Text style={styles.sectionTitle}>My Stories</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -theme.spacing.md }}>
+                {myStories.map((story) => (
+                  <View key={story.id} style={styles.storyBubble}>
+                    <View style={styles.storyRing}>
+                      {story.image ? (
+                        <Image source={{ uri: story.image }} style={styles.storyAvatar} />
+                      ) : avatarUri ? (
+                        <Image source={{ uri: avatarUri }} style={styles.storyAvatar} />
+                      ) : (
+                        <LinearGradient colors={[theme.colors.primary, theme.colors.accent] as [string, string]} style={[styles.storyAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                          <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>{displayName[0]?.toUpperCase() ?? '?'}</Text>
+                        </LinearGradient>
+                      )}
                     </View>
-                    <Text style={{ color: theme.colors.textMuted, fontSize: 18, paddingRight: 4 }}>›</Text>
-                  </GlassCard>
-                </TouchableOpacity>
-              ))}
+                    {!!story.location && <Text style={styles.storyLabel} numberOfLines={1}>{story.location}</Text>}
+                  </View>
+                ))}
+              </ScrollView>
             </View>
           )}
 
-          {/* Privacy settings */}
-          <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>🔒 Privacy Settings</Text>
-          <GlassCard style={styles.privacyCard}>
-            <View style={styles.privacyRow}>
-              <View style={styles.privacyInfo}>
-                <Text style={styles.privacyLabel}>Private Profile</Text>
-                <Text style={styles.privacySub}>Only approved followers see your posts</Text>
+          {/* My Posts grid */}
+          <View style={styles.postsSection}>
+            {myPosts.length === 0 ? (
+              <View style={styles.emptyPosts}>
+                <Text style={styles.emptyPostsIcon}>📸</Text>
+                <Text style={styles.emptyPostsText}>No posts yet</Text>
+                <Text style={styles.emptyPostsSub}>Your travel memories will appear here</Text>
               </View>
-              <Switch
-                value={privateProfile}
-                onValueChange={(v) => {
-                  setPrivateProfile(v);
-                  const uid = auth.currentUser?.uid;
-                  if (uid) setDoc(doc(db, 'users', uid), { privateProfile: v }, { merge: true }).catch(() => {});
-                }}
-                trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-                thumbColor="#fff"
-              />
-            </View>
-
-            <View style={[styles.privacyRow, styles.borderTop]}>
-              <View style={styles.privacyInfo}>
-                <Text style={styles.privacyLabel}>Hide Exact Location</Text>
-                <Text style={styles.privacySub}>Default for all new posts</Text>
-              </View>
-              <Switch
-                value={hideLocation}
-                onValueChange={(v) => {
-                  setHideLocation(v);
-                  const uid = auth.currentUser?.uid;
-                  if (uid) setDoc(doc(db, 'users', uid), { hideExactLocation: v }, { merge: true }).catch(() => {});
-                }}
-                trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-                thumbColor="#fff"
-              />
-            </View>
-
-            <View style={[styles.privacyRow, styles.borderTop]}>
-              <View style={styles.privacyInfo}>
-                <Text style={styles.privacyLabel}>Allow Story Sharing</Text>
-                <Text style={styles.privacySub}>Let others share your posts to their story</Text>
-              </View>
-              <Switch
-                value={allowStoryShares}
-                onValueChange={async (v) => {
-                  setAllowStoryShares(v);
-                  const uid = auth.currentUser?.uid;
-                  if (uid) {
-                    try { await setDoc(doc(db, 'users', uid), { allowStoryShares: v }, { merge: true }); } catch (_) {}
-                  }
-                }}
-                trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-                thumbColor="#fff"
-              />
-            </View>
-
-            <View style={[styles.privacyRow, styles.borderTop]}>
-              <View style={styles.privacyInfo}>
-                <Text style={styles.privacyLabel}>Allow Tagging</Text>
-                <Text style={styles.privacySub}>Let others tag you in posts and photos</Text>
-              </View>
-              <Switch
-                value={allowTagging}
-                onValueChange={async (v) => {
-                  setAllowTagging(v);
-                  const uid = auth.currentUser?.uid;
-                  if (uid) {
-                    try { await setDoc(doc(db, 'users', uid), { allowTagging: v }, { merge: true }); } catch (_) {}
-                  }
-                }}
-                trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-                thumbColor="#fff"
-              />
-            </View>
-
-            <View style={[styles.privacyRow, styles.borderTop]}>
-              <View style={styles.privacyInfo}>
-                <Text style={styles.privacyLabel}>Default Posting Delay</Text>
-                <TouchableOpacity onPress={() => setShowDelayPicker((v) => !v)}>
-                  <Text style={styles.privacyValue}>{DELAY_LABELS[defaultDelay]} ▾</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {showDelayPicker && (
-              <View style={styles.delayPicker}>
-                {(Object.entries(DELAY_LABELS) as [PostDelay, string][]).map(([val, label]) => (
-                  <TouchableOpacity
-                    key={val}
-                    style={[styles.delayOption, defaultDelay === val && styles.delayOptionActive]}
-                    onPress={() => {
-                      setDefaultDelay(val);
-                      setShowDelayPicker(false);
-                    }}
-                  >
-                    <Text style={[styles.delayOptionText, defaultDelay === val && styles.delayOptionTextActive]}>
-                      {label}
-                    </Text>
-                    {defaultDelay === val && <Text style={styles.delayCheck}>✓</Text>}
-                  </TouchableOpacity>
-                ))}
+            ) : (
+              <View style={styles.postsGrid}>
+                {myPosts.map((post) => {
+                  const thumb = post.mediaItems?.[0]?.uri ?? post.imageUrl;
+                  return (
+                    <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
+                      {thumb ? (
+                        <Image source={{ uri: thumb }} style={styles.gridImage} resizeMode="cover" />
+                      ) : (
+                        <View style={[styles.gridImage, { backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' }]}>
+                          <Text style={{ fontSize: 28 }}>🗺️</Text>
+                        </View>
+                      )}
+                      {post.mediaItems && post.mediaItems.length > 1 && (
+                        <View style={styles.gridMultiBadge}>
+                          <Text style={styles.gridMultiBadgeText}>⧉</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
-          </GlassCard>
-
-          {/* Account actions */}
-          <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>⚙️ Account</Text>
-          <GlassCard style={styles.privacyCard}>
-            <TouchableOpacity style={styles.privacyRow} onPress={handleInvite}>
-              <View style={styles.privacyInfo}>
-                <Text style={styles.privacyLabel}>✉️ Invite Friends</Text>
-                <Text style={styles.privacySub}>Share HiddenGems with people you know</Text>
-              </View>
-              <Text style={{ color: theme.colors.textSecondary }}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.privacyRow, styles.borderTop]} onPress={handleForgotPassword}>
-              <View style={styles.privacyInfo}>
-                <Text style={styles.privacyLabel}>Reset Password</Text>
-                <Text style={styles.privacySub}>Send a reset link to your email</Text>
-              </View>
-              <Text style={{ color: theme.colors.textSecondary }}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.privacyRow, styles.borderTop]} onPress={handleLogout}>
-              <View style={styles.privacyInfo}>
-                <Text style={[styles.privacyLabel, { color: '#ef4444' }]}>Log Out</Text>
-              </View>
-              <Text style={{ color: '#ef4444' }}>›</Text>
-            </TouchableOpacity>
-          </GlassCard>
+          </View>
 
         </View>
 
@@ -696,29 +596,187 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* Saved Post Detail Modal */}
-      <Modal visible={!!selectedSavedPost} animationType="slide" presentationStyle="pageSheet">
-        {selectedSavedPost && (
+      {/* Post Preview Modal */}
+      <Modal visible={!!selectedPost} animationType="slide" presentationStyle="pageSheet">
+        {selectedPost && (
           <View style={[styles.pickerModal, { backgroundColor: theme.colors.background }]}>
             <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>{selectedSavedPost.destination ?? 'Saved Post'}</Text>
-              <TouchableOpacity onPress={() => setSelectedSavedPost(null)}>
+              <Text style={styles.pickerTitle}>{selectedPost.destination ?? 'Post'}</Text>
+              <TouchableOpacity onPress={() => setSelectedPost(null)}>
                 <Text style={styles.pickerClose}>✕</Text>
               </TouchableOpacity>
             </View>
             <ScrollView>
-              <Image source={{ uri: selectedSavedPost.imageUrl }} style={{ width: '100%', aspectRatio: 1 }} resizeMode="cover" />
+              {(selectedPost.mediaItems?.[0]?.uri ?? selectedPost.imageUrl) ? (
+                <Image source={{ uri: selectedPost.mediaItems?.[0]?.uri ?? selectedPost.imageUrl }} style={{ width: '100%', aspectRatio: 1 }} resizeMode="cover" />
+              ) : null}
               <View style={{ padding: theme.spacing.md }}>
-                <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 8 }}>@{selectedSavedPost.username} · 📍 {selectedSavedPost.locationArea}</Text>
-                <Text style={{ color: theme.colors.text, fontSize: 15, lineHeight: 22 }}>{selectedSavedPost.caption}</Text>
+                <Text style={{ color: theme.colors.textMuted, fontSize: 13, marginBottom: 8 }}>📍 {selectedPost.locationArea}</Text>
+                {!!selectedPost.caption && <Text style={{ color: theme.colors.text, fontSize: 15, lineHeight: 22 }}>{selectedPost.caption}</Text>}
                 <View style={{ flexDirection: 'row', gap: 16, marginTop: 12 }}>
-                  <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>❤️ {selectedSavedPost.likes}</Text>
-                  <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>💬 {selectedSavedPost.comments}</Text>
+                  <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>❤️ {selectedPost.likes}</Text>
+                  <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>💬 {selectedPost.comments}</Text>
                 </View>
+                {selectedPost.mood?.length > 0 && (
+                  <Text style={{ color: theme.colors.primary, fontSize: 13, marginTop: 8 }}>
+                    {selectedPost.mood.join(' · ')}
+                  </Text>
+                )}
               </View>
             </ScrollView>
           </View>
         )}
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal visible={showSettings} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.pickerModal}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>⚙️ Settings</Text>
+            <TouchableOpacity onPress={() => setShowSettings(false)}>
+              <Text style={styles.pickerClose}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: theme.spacing.md }}>
+
+            {/* Travel Style */}
+            {(loggedInUser?.interests ?? []).length > 0 && (
+              <View style={{ marginBottom: theme.spacing.lg }}>
+                <Text style={styles.sectionTitle}>✈️ Travel Style</Text>
+                <View style={styles.badgeRow}>
+                  {(loggedInUser?.interests ?? []).map((badge, i) => (
+                    <LinearGradient
+                      key={badge}
+                      colors={BADGE_COLORS[i % BADGE_COLORS.length] as [string, string]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.badge}
+                    >
+                      <Text style={styles.badgeText}>{badge}</Text>
+                    </LinearGradient>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Privacy */}
+            <Text style={styles.sectionTitle}>🔒 Privacy</Text>
+            <GlassCard style={[styles.privacyCard, { marginBottom: theme.spacing.lg }]}>
+              <View style={styles.privacyRow}>
+                <View style={styles.privacyInfo}>
+                  <Text style={styles.privacyLabel}>Private Profile</Text>
+                  <Text style={styles.privacySub}>Only approved followers see your posts</Text>
+                </View>
+                <Switch
+                  value={privateProfile}
+                  onValueChange={(v) => {
+                    setPrivateProfile(v);
+                    const uid = auth.currentUser?.uid;
+                    if (uid) setDoc(doc(db, 'users', uid), { privateProfile: v }, { merge: true }).catch(() => {});
+                  }}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <View style={[styles.privacyRow, styles.borderTop]}>
+                <View style={styles.privacyInfo}>
+                  <Text style={styles.privacyLabel}>Hide Exact Location</Text>
+                  <Text style={styles.privacySub}>Default for all new posts</Text>
+                </View>
+                <Switch
+                  value={hideLocation}
+                  onValueChange={(v) => {
+                    setHideLocation(v);
+                    const uid = auth.currentUser?.uid;
+                    if (uid) setDoc(doc(db, 'users', uid), { hideExactLocation: v }, { merge: true }).catch(() => {});
+                  }}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <View style={[styles.privacyRow, styles.borderTop]}>
+                <View style={styles.privacyInfo}>
+                  <Text style={styles.privacyLabel}>Allow Story Sharing</Text>
+                  <Text style={styles.privacySub}>Let others share your posts to their story</Text>
+                </View>
+                <Switch
+                  value={allowStoryShares}
+                  onValueChange={async (v) => {
+                    setAllowStoryShares(v);
+                    const uid = auth.currentUser?.uid;
+                    if (uid) { try { await setDoc(doc(db, 'users', uid), { allowStoryShares: v }, { merge: true }); } catch (_) {} }
+                  }}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <View style={[styles.privacyRow, styles.borderTop]}>
+                <View style={styles.privacyInfo}>
+                  <Text style={styles.privacyLabel}>Allow Tagging</Text>
+                  <Text style={styles.privacySub}>Let others tag you in posts and photos</Text>
+                </View>
+                <Switch
+                  value={allowTagging}
+                  onValueChange={async (v) => {
+                    setAllowTagging(v);
+                    const uid = auth.currentUser?.uid;
+                    if (uid) { try { await setDoc(doc(db, 'users', uid), { allowTagging: v }, { merge: true }); } catch (_) {} }
+                  }}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <View style={[styles.privacyRow, styles.borderTop]}>
+                <View style={styles.privacyInfo}>
+                  <Text style={styles.privacyLabel}>Default Posting Delay</Text>
+                  <TouchableOpacity onPress={() => setShowDelayPicker((v) => !v)}>
+                    <Text style={styles.privacyValue}>{DELAY_LABELS[defaultDelay]} ▾</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              {showDelayPicker && (
+                <View style={styles.delayPicker}>
+                  {(Object.entries(DELAY_LABELS) as [PostDelay, string][]).map(([val, label]) => (
+                    <TouchableOpacity
+                      key={val}
+                      style={[styles.delayOption, defaultDelay === val && styles.delayOptionActive]}
+                      onPress={() => { setDefaultDelay(val); setShowDelayPicker(false); }}
+                    >
+                      <Text style={[styles.delayOptionText, defaultDelay === val && styles.delayOptionTextActive]}>{label}</Text>
+                      {defaultDelay === val && <Text style={styles.delayCheck}>✓</Text>}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </GlassCard>
+
+            {/* Account */}
+            <Text style={styles.sectionTitle}>👤 Account</Text>
+            <GlassCard style={[styles.privacyCard, { marginBottom: theme.spacing.lg }]}>
+              <TouchableOpacity style={styles.privacyRow} onPress={handleInvite}>
+                <View style={styles.privacyInfo}>
+                  <Text style={styles.privacyLabel}>✉️ Invite Friends</Text>
+                  <Text style={styles.privacySub}>Share HiddenGems with people you know</Text>
+                </View>
+                <Text style={{ color: theme.colors.textSecondary }}>›</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.privacyRow, styles.borderTop]} onPress={handleForgotPassword}>
+                <View style={styles.privacyInfo}>
+                  <Text style={styles.privacyLabel}>Reset Password</Text>
+                  <Text style={styles.privacySub}>Send a reset link to your email</Text>
+                </View>
+                <Text style={{ color: theme.colors.textSecondary }}>›</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.privacyRow, styles.borderTop]} onPress={handleLogout}>
+                <View style={styles.privacyInfo}>
+                  <Text style={[styles.privacyLabel, { color: '#ef4444' }]}>Log Out</Text>
+                </View>
+                <Text style={{ color: '#ef4444' }}>›</Text>
+              </TouchableOpacity>
+            </GlassCard>
+
+          </ScrollView>
+        </View>
       </Modal>
 
     </SafeAreaView>
@@ -1090,19 +1148,119 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   editBtn: {
-    alignSelf: 'center',
+    flex: 1,
     borderWidth: 1.5,
     borderColor: theme.colors.primary,
     borderRadius: theme.borderRadius.full,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: 8,
-    marginTop: theme.spacing.sm,
-    marginBottom: theme.spacing.lg,
+    alignItems: 'center',
   },
   editBtnText: {
     color: theme.colors.primaryLight,
     ...theme.typography.caption,
     fontWeight: '700',
+  },
+  profileActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.lg,
+    alignItems: 'center',
+  },
+  settingsBtn: {
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsBtnText: {
+    fontSize: 18,
+  },
+  storiesSection: {
+    marginBottom: theme.spacing.lg,
+  },
+  storyBubble: {
+    alignItems: 'center',
+    marginLeft: theme.spacing.md,
+    width: 70,
+  },
+  storyRing: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    borderWidth: 2.5,
+    borderColor: theme.colors.primary,
+    padding: 2,
+    overflow: 'hidden',
+  },
+  storyAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+  },
+  storyLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 10,
+    marginTop: 4,
+    textAlign: 'center',
+    maxWidth: 64,
+  },
+  postsSection: {
+    marginBottom: theme.spacing.lg,
+  },
+  postsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -1,
+  },
+  gridItem: {
+    width: (SCREEN.width - theme.spacing.md * 2 - 2) / 3,
+    aspectRatio: 1,
+    margin: 1,
+    overflow: 'hidden',
+    borderRadius: 4,
+    backgroundColor: theme.colors.surface,
+  },
+  gridImage: {
+    width: '100%',
+    height: '100%',
+  },
+  gridMultiBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  gridMultiBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyPosts: {
+    alignItems: 'center',
+    paddingVertical: 48,
+  },
+  emptyPostsIcon: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  emptyPostsText: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  emptyPostsSub: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
   },
   editHeader: {
     flexDirection: 'row',
