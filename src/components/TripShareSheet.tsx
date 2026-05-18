@@ -12,7 +12,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 import { Trip, TripStop, useUser } from '../context/UserContext';
-import { createPostInFirestore } from '../services/postsService';
+import { createPostInFirestore, saveStory } from '../services/postsService';
 import LeafletMapView, { LMarker, LRegion } from './LeafletMapView';
 
 const BG_IMAGES = [
@@ -63,7 +63,7 @@ interface Props {
 }
 
 export default function TripShareSheet({ trip, onClose }: Props) {
-  const { user, addTripStory } = useUser();
+  const { user } = useUser();
   const [caption, setCaption] = useState('');
   const [privacy, setPrivacy] = useState<'public' | 'followers'>('public');
   const [includeMap, setIncludeMap] = useState(true);
@@ -132,21 +132,25 @@ export default function TripShareSheet({ trip, onClose }: Props) {
     ]);
   };
 
-  const shareAsStory = () => {
-    addTripStory({
-      id: `trip_story_${Date.now()}`,
-      username: user?.username ?? 'traveler',
-      avatar: user?.avatarUri ?? null,
-      bgImage: postImageUrl,
-      mapIncluded: includeMap,
-      tripName: trip.name,
-      stops: stopNames,
-      caption: caption.trim(),
-      createdAt: Date.now(),
-    });
-    Alert.alert('Story shared! \ud83d\udcf8', 'Your trip story will appear at the top of the feed.', [
-      { text: 'OK', onPress: onClose },
-    ]);
+  const shareAsStory = async () => {
+    try {
+      await saveStory({
+        userId: user?.id ?? '',
+        username: user?.username ?? 'traveler',
+        userAvatar: user?.avatarUri ?? null,
+        image: postImageUrl || null,
+        videoUri: null,
+        overlayText: `${trip.name}\n${stopNames.slice(0, 3).join(' → ')}${stopNames.length > 3 ? ` +${stopNames.length - 3}` : ''}`,
+        location: countries[0] ?? stopNames[0] ?? null,
+        music: null,
+        mentions: [],
+      });
+      Alert.alert('Story shared! 📸', 'Your trip story will appear at the top of the feed.', [
+        { text: 'OK', onPress: onClose },
+      ]);
+    } catch (e: any) {
+      Alert.alert('Failed', e.message ?? 'Could not share story. Try again.');
+    }
   };
 
   return (

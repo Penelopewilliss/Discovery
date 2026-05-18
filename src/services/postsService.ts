@@ -26,6 +26,18 @@ import { Post, MediaItem, Comment } from '../types';
 
 // ─── Media Upload ───────────────────────────────────────────────────────────
 
+/** Reliably converts a local file URI to a Blob in React Native (fetch().blob() is unreliable) */
+function uriToBlob(uri: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onload = () => resolve(xhr.response as Blob);
+    xhr.onerror = reject;
+    xhr.responseType = 'blob';
+    xhr.open('GET', uri, true);
+    xhr.send();
+  });
+}
+
 export async function uploadPostMedia(
   userId: string,
   postId: string,
@@ -40,8 +52,7 @@ export async function uploadPostMedia(
       continue;
     }
     try {
-      const response = await fetch(item.uri);
-      const blob = await response.blob();
+      const blob = await uriToBlob(item.uri);
       const ext = item.type === 'video' ? 'mp4' : 'jpg';
       const storageRef = ref(storage, `post-media/${userId}/${postId}/${i}.${ext}`);
       await uploadBytes(storageRef, blob);
@@ -445,8 +456,7 @@ export async function saveStory(data: Omit<FirestoreStory, 'id' | 'createdAt'>):
 }
 
 export async function uploadStoryMedia(userId: string, localUri: string, type: 'photo' | 'video'): Promise<string> {
-  const response = await fetch(localUri);
-  const blob = await response.blob();
+  const blob = await uriToBlob(localUri);
   const ext = type === 'video' ? 'mp4' : 'jpg';
   const storyRef = ref(storage, `stories/${userId}/${Date.now()}.${ext}`);
   await uploadBytes(storyRef, blob);
