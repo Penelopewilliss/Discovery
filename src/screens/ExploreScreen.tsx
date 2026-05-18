@@ -13,6 +13,9 @@ import {
   Modal,
   Alert,
   Switch,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -62,6 +65,8 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
   const [tick, setTick] = useState(0);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('map');
+  // Remember which view the user was in before typing so we can restore it
+  const preSearchViewMode = useRef<'grid' | 'map'>('map');
 
   // Trip planner state
   const [showTripPlanner, setShowTripPlanner] = useState(false);
@@ -164,8 +169,10 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
   useEffect(() => {
     if (!query.trim()) {
       setSearchResults([]);
-      // Fly back to user location (or world view) when search is cleared
-      if (userLocation) {
+      // Restore the view mode the user was in before searching
+      setViewMode(preSearchViewMode.current);
+      // Fly back to user location when returning to map
+      if (preSearchViewMode.current === 'map' && userLocation) {
         mapRef.current?.flyTo(userLocation.latitude, userLocation.longitude, 4);
       }
       return;
@@ -407,6 +414,13 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
           placeholderTextColor={theme.colors.textMuted}
           value={query}
           onChangeText={setQuery}
+          onFocus={() => {
+            // Switch to grid so results are visible above the keyboard
+            preSearchViewMode.current = viewMode;
+            setViewMode('grid');
+          }}
+          returnKeyType="search"
+          onSubmitEditing={Keyboard.dismiss}
         />
         {searchLoading && query.length > 0 ? (
           <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginRight: 4 }} />
@@ -574,7 +588,12 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
 
       {/* Grid View */}
       {viewMode === 'grid' && (
-        <>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
+          <>
           {/* Horizontal featured cards */}
           {query.length === 0 && (
             <View style={styles.featuredSection}>
@@ -653,7 +672,8 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
               }
             />
           )}
-        </>
+          </>
+        </KeyboardAvoidingView>
       )}
 
       {/* ═══ Trip Planner Modal ═══ */}
