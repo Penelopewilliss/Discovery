@@ -13,8 +13,6 @@ import {
   Modal,
   Alert,
   Switch,
-  KeyboardAvoidingView,
-  Platform,
   Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -67,6 +65,7 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('map');
   // Remember which view the user was in before typing so we can restore it
   const preSearchViewMode = useRef<'grid' | 'map'>('map');
+  const [kbHeight, setKbHeight] = useState(0);
 
   // Trip planner state
   const [showTripPlanner, setShowTripPlanner] = useState(false);
@@ -139,6 +138,13 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
   };
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
   const searchAbortRef = useRef<AbortController>();
+
+  // Track keyboard height so the results list can pad itself out of the way
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKbHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKbHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // Load featured destinations and start live GPS tracking on mount
   useEffect(() => {
@@ -588,12 +594,7 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
 
       {/* Grid View */}
       {viewMode === 'grid' && (
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={0}
-        >
-          <>
+        <>
           {/* Horizontal featured cards */}
           {query.length === 0 && (
             <View style={styles.featuredSection}>
@@ -637,8 +638,9 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
               keyExtractor={(item) => item.id + tick}
               numColumns={2}
               columnWrapperStyle={styles.gridRow}
-              contentContainerStyle={styles.grid}
+              contentContainerStyle={[styles.grid, { paddingBottom: kbHeight + 16 }]}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.gridCard}
@@ -672,8 +674,7 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
               }
             />
           )}
-          </>
-        </KeyboardAvoidingView>
+        </>
       )}
 
       {/* ═══ Trip Planner Modal ═══ */}
