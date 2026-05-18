@@ -127,7 +127,15 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
 
   if (photoUri && !errored) {
     return (
-      <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, backgroundColor: '#0a0a12' }}>
+      <View style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, overflow: 'hidden', backgroundColor: '#0a0a12' }}>
+        {/* Blurred background fills the letterbox area */}
+        <Image
+          source={{ uri: photoUri }}
+          style={{ position: 'absolute', width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE }}
+          resizeMode="cover"
+          blurRadius={12}
+        />
+        {/* Sharp full photo on top — fully visible, nothing cropped */}
         <Image
           source={{ uri: photoUri }}
           style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, opacity }}
