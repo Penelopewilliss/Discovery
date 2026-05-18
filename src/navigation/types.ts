@@ -10,6 +10,7 @@ export type AuthStackParamList = {
 export type RootStackParamList = {
   MainApp: undefined;
   Chat: { conversation: Conversation };
+  OtherUserProfile: { userId: string };
 };
 
 export type MessagesStackParamList = {

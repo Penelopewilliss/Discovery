@@ -28,10 +28,17 @@ import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, limit } from 'firebase/firestore';
 import { FirestoreStory } from '../services/postsService';
+import {
+  getIncomingFollowRequests, acceptFollowRequest, declineFollowRequest,
+  getIncomingFriendRequests, acceptFriendRequest, declineFriendRequest,
+  getFriendList, FollowRequest, FriendRequest, Friend,
+} from '../services/socialService';
 import * as FileSystem from 'expo-file-system/legacy';
 import GlassCard from '../components/GlassCard';
 import { useUser } from '../context/UserContext';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
 import { PostDelay, Post } from '../types';
 
 const ALL_COUNTRIES: { name: string; emoji: string }[] = [
@@ -83,19 +90,25 @@ const BADGE_COLORS = [
 
 export default function ProfileScreen() {
   const { user: loggedInUser, setUser, stamps } = useUser();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [privateProfile, setPrivateProfile] = useState(false);
   const [hideLocation, setHideLocation] = useState(true);
   const [allowStoryShares, setAllowStoryShares] = useState(true);
   const [allowTagging, setAllowTagging] = useState(true);
+  const [friendListVisibility, setFriendListVisibility] = useState<'public' | 'friends' | 'private'>('public');
   const [defaultDelay, setDefaultDelay] = useState<PostDelay>('24h');
   const [showDelayPicker, setShowDelayPicker] = useState(false);
   const [showFollowersList, setShowFollowersList] = useState(false);
   const [showFollowingList, setShowFollowingList] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRequestsModal, setShowRequestsModal] = useState(false);
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [myStories, setMyStories] = useState<FirestoreStory[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [myFriends, setMyFriends] = useState<Friend[]>([]);
+  const totalPendingRequests = followRequests.length + friendRequests.length;
 
 
   const handleLogout = () => {
@@ -170,7 +183,13 @@ export default function ProfileScreen() {
       if (data.hideExactLocation !== undefined) setHideLocation(data.hideExactLocation);
       if (data.allowStoryShares !== undefined) setAllowStoryShares(data.allowStoryShares);
       if (data.allowTagging !== undefined) setAllowTagging(data.allowTagging);
+      if (data.friendListVisibility !== undefined) setFriendListVisibility(data.friendListVisibility);
     }).catch(() => {});
+
+    // Load follow requests, friend requests, and friend list
+    getIncomingFollowRequests(uid).then(setFollowRequests).catch(() => {});
+    getIncomingFriendRequests(uid).then(setFriendRequests).catch(() => {});
+    getFriendList(uid).then(setMyFriends).catch(() => {});
 
     // Load follower / following counts
     getDocs(query(collection(db, 'follows'), where('followeeId', '==', uid))).then((snap) => {
@@ -443,6 +462,14 @@ export default function ProfileScreen() {
             <TouchableOpacity style={styles.editBtn} onPress={openEdit}>
               <Text style={styles.editBtnText}>✏️  Edit Profile</Text>
             </TouchableOpacity>
+            {totalPendingRequests > 0 && (
+              <TouchableOpacity style={styles.requestsBtn} onPress={() => setShowRequestsModal(true)}>
+                <Text style={styles.settingsBtnText}>🔔</Text>
+                <View style={styles.requestsBadge}>
+                  <Text style={styles.requestsBadgeText}>{totalPendingRequests}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
               <Text style={styles.settingsBtnText}>⚙️</Text>
             </TouchableOpacity>
@@ -531,6 +558,33 @@ export default function ProfileScreen() {
             )}
           </View>
 
+          {/* Friends section */}
+          {myFriends.length > 0 && (
+            <View style={{ marginTop: 24, marginBottom: 8 }}>
+              <Text style={styles.sectionTitle}>👫 Friends ({myFriends.length})</Text>
+              {myFriends.map((fr) => (
+                <TouchableOpacity
+                  key={fr.id}
+                  onPress={() => navigation.navigate('OtherUserProfile', { userId: fr.id })}
+                  activeOpacity={0.8}
+                >
+                  <GlassCard style={{ flexDirection: 'row', alignItems: 'center', padding: 12, marginBottom: 8, gap: 12 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      {fr.avatar
+                        ? <Image source={{ uri: fr.avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                        : <Text style={{ fontSize: 20 }}>👤</Text>}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: theme.colors.text, fontSize: 14, fontWeight: '600' }}>{fr.username}</Text>
+                      <Text style={{ color: theme.colors.textMuted, fontSize: 12, marginTop: 1 }}>@{fr.username}</Text>
+                    </View>
+                    <Text style={{ color: theme.colors.textSecondary }}>›</Text>
+                  </GlassCard>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
         </View>
 
         <View style={{ height: theme.spacing.xxl }} />
@@ -593,6 +647,105 @@ export default function ProfileScreen() {
             )}
             ListEmptyComponent={<Text style={{ color: theme.colors.textMuted, textAlign: 'center', marginTop: 40 }}>No following yet</Text>}
           />
+        </View>
+      </Modal>
+
+      {/* Requests Modal */}
+      <Modal visible={showRequestsModal} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.pickerModal}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>🔔 Requests</Text>
+            <TouchableOpacity onPress={() => setShowRequestsModal(false)}>
+              <Text style={styles.pickerClose}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: theme.spacing.md }}>
+
+            {/* Follow Requests */}
+            {followRequests.length > 0 && (
+              <View style={{ marginBottom: theme.spacing.lg }}>
+                <Text style={styles.sectionTitle}>👤 Follow Requests ({followRequests.length})</Text>
+                {followRequests.map((req) => (
+                  <GlassCard key={req.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, marginBottom: 8, gap: 12 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      {req.avatar
+                        ? <Image source={{ uri: req.avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                        : <Text style={{ fontSize: 20 }}>👤</Text>}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: theme.colors.text, fontSize: 14, fontWeight: '600' }}>@{req.username}</Text>
+                      <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>wants to follow you</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={{ backgroundColor: theme.colors.primary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginRight: 6 }}
+                      onPress={async () => {
+                        await acceptFollowRequest(req.id, auth.currentUser!.uid);
+                        setFollowRequests((prev) => prev.filter((r) => r.id !== req.id));
+                        setFollowerCount((c) => c + 1);
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Accept</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ borderWidth: 1, borderColor: theme.colors.border, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 }}
+                      onPress={async () => {
+                        await declineFollowRequest(req.id, auth.currentUser!.uid);
+                        setFollowRequests((prev) => prev.filter((r) => r.id !== req.id));
+                      }}
+                    >
+                      <Text style={{ color: theme.colors.textMuted, fontSize: 13 }}>Decline</Text>
+                    </TouchableOpacity>
+                  </GlassCard>
+                ))}
+              </View>
+            )}
+
+            {/* Friend Requests */}
+            {friendRequests.length > 0 && (
+              <View style={{ marginBottom: theme.spacing.lg }}>
+                <Text style={styles.sectionTitle}>🤝 Friend Requests ({friendRequests.length})</Text>
+                {friendRequests.map((req) => (
+                  <GlassCard key={req.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, marginBottom: 8, gap: 12 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      {req.avatar
+                        ? <Image source={{ uri: req.avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                        : <Text style={{ fontSize: 20 }}>👤</Text>}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: theme.colors.text, fontSize: 14, fontWeight: '600' }}>@{req.username}</Text>
+                      <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>sent you a friend request</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#22c55e', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginRight: 6 }}
+                      onPress={async () => {
+                        await acceptFriendRequest(auth.currentUser!.uid, req.id);
+                        setFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
+                        setMyFriends((prev) => [...prev, { id: req.id, username: req.username, avatar: req.avatar }]);
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Accept</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ borderWidth: 1, borderColor: theme.colors.border, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 }}
+                      onPress={async () => {
+                        await declineFriendRequest(auth.currentUser!.uid, req.id);
+                        setFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
+                      }}
+                    >
+                      <Text style={{ color: theme.colors.textMuted, fontSize: 13 }}>Decline</Text>
+                    </TouchableOpacity>
+                  </GlassCard>
+                ))}
+              </View>
+            )}
+
+            {followRequests.length === 0 && friendRequests.length === 0 && (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Text style={{ fontSize: 36, marginBottom: 12 }}>✅</Text>
+                <Text style={{ color: theme.colors.textMuted, fontSize: 15 }}>No pending requests</Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
       </Modal>
 
@@ -725,6 +878,31 @@ export default function ProfileScreen() {
                   trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
                   thumbColor="#fff"
                 />
+              </View>
+              <View style={[styles.privacyRow, styles.borderTop]}>
+                <View style={styles.privacyInfo}>
+                  <Text style={styles.privacyLabel}>Friend List Visibility</Text>
+                  <Text style={styles.privacySub}>Who can see your friends list</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8, padding: 12, paddingTop: 0 }}>
+                {(['public', 'friends', 'private'] as const).map((opt) => (
+                  <TouchableOpacity
+                    key={opt}
+                    style={{
+                      flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center',
+                      backgroundColor: friendListVisibility === opt ? theme.colors.primary : theme.colors.surface,
+                      borderWidth: 1, borderColor: friendListVisibility === opt ? theme.colors.primary : theme.colors.border,
+                    }}
+                    onPress={async () => {
+                      setFriendListVisibility(opt);
+                      const uid = auth.currentUser?.uid;
+                      if (uid) { try { await setDoc(doc(db, 'users', uid), { friendListVisibility: opt }, { merge: true }); } catch (_) {} }
+                    }}
+                  >
+                    <Text style={{ color: friendListVisibility === opt ? '#fff' : theme.colors.textMuted, fontSize: 12, fontWeight: '600', textTransform: 'capitalize' }}>{opt}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
               <View style={[styles.privacyRow, styles.borderTop]}>
                 <View style={styles.privacyInfo}>
@@ -1176,6 +1354,33 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  requestsBtn: {
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  requestsBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  requestsBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   settingsBtnText: {
     fontSize: 18,

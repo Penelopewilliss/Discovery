@@ -19,6 +19,7 @@ import MessagesScreen from './src/screens/MessagesScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import PassportScreen from './src/screens/PassportScreen';
+import OtherUserProfileScreen from './src/screens/OtherUserProfileScreen';
 import { UserProvider, useUser } from './src/context/UserContext';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -154,6 +155,11 @@ function AppNavigator() {
           <RootStack.Screen
             name="Chat"
             component={ChatScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <RootStack.Screen
+            name="OtherUserProfile"
+            component={OtherUserProfileScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </RootStack.Navigator>

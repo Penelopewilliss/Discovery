@@ -335,6 +335,7 @@ export async function followUser(
     followerAvatar: followerAvatar ?? null,
     followeeId,
     followeeUsername,
+    status: 'following',
     createdAt: serverTimestamp(),
   });
 }

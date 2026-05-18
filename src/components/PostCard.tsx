@@ -32,6 +32,9 @@ import {
 import { useUser } from '../context/UserContext';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
 
 const { width } = Dimensions.get('window');
 
@@ -91,6 +94,7 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
   const [reactions, setReactions] = useState<Record<string, number>>(post.reactions ?? {});
   const [showComments, setShowComments] = useState(false);
   const [showUserProfile, setShowUserProfile] = useState(false);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [taggedProfile, setTaggedProfile] = useState<UserTag | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
@@ -264,7 +268,14 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
     <View style={styles.card}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerLeft} onPress={() => setShowUserProfile(true)} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.headerLeft}
+          onPress={() => {
+            if (isOwnPost) return;
+            navigation.navigate('OtherUserProfile', { userId: post.userId });
+          }}
+          activeOpacity={0.7}
+        >
           {post.userAvatar
             ? <Image source={{ uri: post.userAvatar }} style={styles.avatar} />
             : <View style={[styles.avatar, styles.avatarPlaceholder]}><Text style={styles.avatarInitial}>{(post.username?.[0] ?? '?').toUpperCase()}</Text></View>
@@ -605,47 +616,6 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
-
-      {/* User Profile Modal */}
-      <Modal visible={showUserProfile} animationType="slide" transparent presentationStyle="overFullScreen">
-        <TouchableWithoutFeedback onPress={() => setShowUserProfile(false)}>
-          <View style={styles.profileModalOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.profileModalSheet}>
-                <View style={styles.profileModalHandle} />
-                <Image source={{ uri: post.userAvatar }} style={styles.profileModalAvatar} />
-                <Text style={styles.profileModalUsername}>@{post.username}</Text>
-                {!!post.destination && (
-                  <Text style={styles.profileModalLocation}>📍 Travels to {post.destination}</Text>
-                )}
-                <View style={styles.profileModalActions}>
-                  {!isOwnPost && (
-                    <TouchableOpacity
-                      style={[styles.profileModalFollowBtn, following && styles.profileModalFollowingBtn]}
-                      onPress={() => {
-                        const nowFollowing = !following;
-                        setFollowing(nowFollowing);
-                        if (loggedInUser?.id) {
-                          nowFollowing
-                            ? followUser(loggedInUser.id, loggedInUser.username, loggedInUser.avatarUri, post.userId, post.username)
-                            : unfollowUser(loggedInUser.id, post.userId);
-                        }
-                      }}
-                    >
-                      <Text style={[styles.profileModalFollowText, following && styles.profileModalFollowingText]}>
-                        {following ? '✓ Following' : 'Follow'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity style={styles.profileModalCloseBtn} onPress={() => setShowUserProfile(false)}>
-                    <Text style={styles.profileModalCloseTxt}>Close</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Tagged user mini profile modal */}

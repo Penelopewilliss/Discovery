@@ -20,6 +20,9 @@ import { followUser, unfollowUser, checkFollowing } from '../services/postsServi
 import { useUser } from '../context/UserContext';
 import GlassCard from '../components/GlassCard';
 import { getFeaturedPlaces, searchFsqPlaces, FsqPlace, FsqPlaceWithPhoto } from '../utils/foursquare';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
 
 function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
   return {
@@ -46,6 +49,7 @@ type SortOrder = 'popular' | 'newest';
 
 export default function SearchScreen() {
   const { user: loggedInUser } = useUser();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<Tab>('All');
   const [sortOrder, setSortOrder] = useState<SortOrder>('popular');
@@ -325,8 +329,14 @@ export default function SearchScreen() {
             {(activeTab === 'All') && <Text style={styles.sectionTitle}>👤 People</Text>}
             {filteredUsers.map((user) => {
               const followed = followedUsers.includes(user.id);
+              const isMe = user.id === loggedInUser?.id;
               return (
-                <View key={user.id} style={styles.userRow}>
+                <TouchableOpacity
+                  key={user.id}
+                  style={styles.userRow}
+                  onPress={() => { if (!isMe) navigation.navigate('OtherUserProfile', { userId: user.id }); }}
+                  activeOpacity={0.8}
+                >
                 <Image source={user.avatar ? { uri: user.avatar } : { uri: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80' }} style={styles.userAvatar} />
                   <View style={styles.userInfo}>
                     <Text style={styles.userName}>{user.name}</Text>
@@ -335,16 +345,18 @@ export default function SearchScreen() {
                   </View>
                   <View style={styles.userRight}>
                     <Text style={styles.followerCount}>traveler</Text>
-                    <TouchableOpacity
-                      onPress={() => toggleFollow(user.id)}
-                      style={[styles.followBtn, followed && styles.followBtnActive]}
-                    >
-                      <Text style={[styles.followBtnText, followed && styles.followBtnTextActive]}>
-                        {followed ? '✓ Following' : 'Follow'}
-                      </Text>
-                    </TouchableOpacity>
+                    {!isMe && (
+                      <TouchableOpacity
+                        onPress={(e) => { e.stopPropagation?.(); toggleFollow(user.id); }}
+                        style={[styles.followBtn, followed && styles.followBtnActive]}
+                      >
+                        <Text style={[styles.followBtnText, followed && styles.followBtnTextActive]}>
+                          {followed ? '✓ Following' : 'Follow'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
