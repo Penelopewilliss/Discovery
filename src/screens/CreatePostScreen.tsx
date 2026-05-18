@@ -177,7 +177,6 @@ export default function CreatePostScreen() {
             'Photo upload failed',
             err?.message ?? 'Could not upload your photo. Check your connection and try again.',
           );
-          );
           return;
         }
       }
