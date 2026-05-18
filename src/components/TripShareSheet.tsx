@@ -124,7 +124,11 @@ export default function TripShareSheet({ trip, onClose }: Props) {
         stops: stopNames,
         countries,
         stopCount: trip.stops.length,
-        mapIncluded: includeMap,
+        mapIncluded: includeMap && !!staticMapUrl,
+        mapImageUrl: includeMap && staticMapUrl ? staticMapUrl : undefined,
+        stopCoords: trip.stops
+          .filter((s) => s.lat && s.lon)
+          .map((s) => ({ lat: s.lat, lon: s.lon })),
       },
     });
     Alert.alert('Posted! 🎉', 'Your trip card is live on the feed.', [

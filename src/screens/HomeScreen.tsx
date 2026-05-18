@@ -1104,7 +1104,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={[]}>
       <FlatList
         data={isLoading ? [] : filtered}
-        keyExtractor={(item) => item.id + tick.toString()}
+        keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
             <PostCard
               post={item}

@@ -505,6 +505,10 @@ export async function uploadStoryMedia(userId: string, localUri: string, type: '
   return uploadFileToStorage(localUri, storagePath, contentType);
 }
 
+export async function deleteStory(storyId: string): Promise<void> {
+  await deleteDoc(doc(db, 'stories', storyId));
+}
+
 export function listenToStories(
   userId: string,
   onStories: (stories: FirestoreStory[]) => void

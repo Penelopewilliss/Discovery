@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Modal,
   View,
@@ -6,12 +6,13 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
+  TextInput,
   StyleSheet,
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { LiveTrip } from '../context/UserContext';
+import { LiveTrip, CompletedLiveTrip } from '../context/UserContext';
 import { useUser } from '../context/UserContext';
 import { createPostInFirestore } from '../services/postsService';
 import LeafletMapView, { LMarker, LRegion } from './LeafletMapView';
@@ -73,6 +74,8 @@ export default function LiveTripSummarySheet({
   username,
 }: Props) {
   const { user: loggedInUser } = useUser();
+  const isManual = (trip as CompletedLiveTrip).source === 'manual';
+  const [caption, setCaption] = useState('');
   const markers: LMarker[] = trip.pins.map((pin, i) => ({
     id: pin.id,
     latitude: pin.latitude,
@@ -116,9 +119,10 @@ export default function LiveTripSummarySheet({
         'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800&q=80',
       mediaItems: allMedia.length > 0 ? allMedia : undefined,
       caption:
-        `📍 Live trip recap: ${trip.name}\n` +
+        caption.trim() ||
+        (`📍 ${isManual ? 'Trip recap' : 'Live trip recap'}: ${trip.name}\n` +
         stopNames.slice(0, 6).join(' → ') +
-        (stopNames.length > 6 ? ` +${stopNames.length - 6} more` : ''),
+        (stopNames.length > 6 ? ` +${stopNames.length - 6} more` : '')),
       locationArea: stopNames[0] ?? 'On the road',
       destination: stopNames.join(' → '),
       tags: ['adventure'],
@@ -141,13 +145,15 @@ export default function LiveTripSummarySheet({
         stops: stopNames,
         countries: [],
         stopCount: trip.pins.length,
-        mapIncluded: true,
+        mapIncluded: !!staticMapUrl,
+        mapImageUrl: staticMapUrl || undefined,
+        stopCoords: trip.pins.map((p) => ({ lat: p.latitude, lon: p.longitude })),
       },
     });
 
     Alert.alert(
       '🎉 Shared to feed!',
-      `Your live trip "${trip.name}" is live with ${photoItems.length} photo${photoItems.length !== 1 ? 's' : ''} + route map.`,
+      `Your trip "${trip.name}" is live with ${photoItems.length} photo${photoItems.length !== 1 ? 's' : ''} + route map.`,
       [{ text: 'Awesome!', onPress: onEnd }],
     );
   };
@@ -159,7 +165,7 @@ export default function LiveTripSummarySheet({
           <View style={styles.handle} />
 
           <Text style={styles.title}>
-            {mode === 'end' ? '\ud83c\udfc1 End Live Trip' : '\ud83d\udccd Your Stops'}
+            {mode === 'end' ? (isManual ? '📤 Share Past Trip' : '🏁 End Live Trip') : '📍 Your Stops'}
           </Text>
           <Text style={styles.sub}>
             {trip.name} \u00b7 {trip.pins.length} stop
@@ -236,7 +242,17 @@ export default function LiveTripSummarySheet({
           {mode === 'end' ? (
             <>
               {trip.pins.length > 0 && (
-                <TouchableOpacity style={styles.shareBtn} onPress={shareToFeed}>
+                <>
+                  <TextInput
+                    style={styles.captionInput}
+                    placeholder="Add a caption..."
+                    placeholderTextColor={theme.colors.textMuted}
+                    value={caption}
+                    onChangeText={setCaption}
+                    multiline
+                    maxLength={300}
+                  />
+                  <TouchableOpacity style={styles.shareBtn} onPress={shareToFeed}>
                   <LinearGradient
                     colors={['#6366f1', '#8b5cf6']}
                     start={{ x: 0, y: 0 }}
@@ -251,6 +267,7 @@ export default function LiveTripSummarySheet({
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>
+                </>
               )}
               <TouchableOpacity style={styles.endBtn} onPress={onEnd}>
                 <Text style={styles.endBtnText}>End trip without sharing</Text>
@@ -358,6 +375,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 16,
     lineHeight: 20,
+  },
+  captionInput: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    color: theme.colors.text,
+    fontSize: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
+    minHeight: 60,
+    textAlignVertical: 'top',
   },
   shareBtn: { borderRadius: 14, overflow: 'hidden', marginBottom: 10 },
   shareBtnInner: { paddingVertical: 15, alignItems: 'center' },

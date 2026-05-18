@@ -11,6 +11,7 @@ export type LoggedInUser = {
   username: string;
   email: string;
   avatarUri: string | null;
+  coverPhotoUri?: string | null;
   bio: string;
   homeCountry: string;
   interests: string[];

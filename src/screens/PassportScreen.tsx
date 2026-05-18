@@ -25,6 +25,8 @@ import LiveTripSummarySheet from '../components/LiveTripSummarySheet';
 import CreateTripModal from '../components/CreateTripModal';
 import ExploreScreen from './ExploreScreen';
 import { useUser, Trip, CompletedLiveTrip, VisitedPlace } from '../context/UserContext';
+import { createPostInFirestore } from '../services/postsService';
+import { auth } from '../firebase';
 import { Stamp } from '../types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -136,11 +138,15 @@ export default function PassportScreen() {
 
   // Map modals
   const [showTravelMap, setShowTravelMap] = useState(false);
+  const [showMapShareSheet, setShowMapShareSheet] = useState(false);
+  const [mapShareCaption, setMapShareCaption] = useState('');
+  const [mapSharePosting, setMapSharePosting] = useState(false);
 
   // Other sheets
   const [showCreateTrip, setShowCreateTrip] = useState(false);
   const [sharingTrip, setSharingTrip] = useState<Trip | null>(null);
   const [reviewingTrip, setReviewingTrip] = useState<CompletedLiveTrip | null>(null);
+  const [reviewingTripMode, setReviewingTripMode] = useState<'view' | 'end'>('view');
 
   const toggleCountry = (name: string) => {
     setSelectedCountries((prev) => {
@@ -339,7 +345,7 @@ export default function PassportScreen() {
               const photos = trip.pins.filter((p) => p.photoUri);
               const date = new Date(trip.endedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
               return (
-                <TouchableOpacity key={trip.id} activeOpacity={0.85} onPress={() => setReviewingTrip(trip)}>
+                <TouchableOpacity key={trip.id} activeOpacity={0.85} onPress={() => { setReviewingTripMode('view'); setReviewingTrip(trip); }}>
                   <GlassCard style={s.tripCard}>
                     <View style={s.tripCardHeader}>
                       <View style={{ flex: 1 }}>
@@ -371,7 +377,15 @@ export default function PassportScreen() {
                       </View>
                     )}
                     <Text style={s.tripStops} numberOfLines={1}>{trip.pins.map((p) => p.placeName).join('  →  ')}</Text>
-                    <Text style={s.tripTap}>Tap to view map + photos →</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                      <Text style={s.tripTap}>Tap to view map + photos →</Text>
+                      <TouchableOpacity
+                        onPress={(e) => { e.stopPropagation(); setReviewingTripMode('end'); setReviewingTrip(trip); }}
+                        style={s.shareBtn}
+                      >
+                        <Text style={s.shareBtnText}>↗ Share</Text>
+                      </TouchableOpacity>
+                    </View>
                   </GlassCard>
                 </TouchableOpacity>
               );
@@ -503,12 +517,114 @@ export default function PassportScreen() {
         <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
           <View style={s.mapModalHeader}>
             <Text style={s.mapModalTitle}>My Travel Map</Text>
-            <TouchableOpacity onPress={() => setShowTravelMap(false)}>
-              <Text style={s.mapModalClose}>✕</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => setShowMapShareSheet(true)}
+                style={{ backgroundColor: theme.colors.primary, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 }}
+              >
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>📤 Share as Post</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowTravelMap(false)}>
+                <Text style={s.mapModalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <LeafletMapView places={visitedPlaces} style={{ flex: 1 }} />
         </SafeAreaView>
+      </Modal>
+
+      {/* Map Share Caption Sheet */}
+      <Modal visible={showMapShareSheet} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowMapShareSheet(false)}>
+        <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
+            <TouchableOpacity onPress={() => setShowMapShareSheet(false)}>
+              <Text style={{ color: theme.colors.textMuted, fontSize: 15 }}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={{ color: theme.colors.text, fontWeight: '700', fontSize: 16 }}>Share Travel Map</Text>
+            <TouchableOpacity
+              onPress={async () => {
+                const fbUser = auth.currentUser;
+                if (!fbUser) return;
+                setMapSharePosting(true);
+                try {
+                  await createPostInFirestore({
+                    id: `map_post_${Date.now()}`,
+                    userId: fbUser.uid,
+                    username: fbUser.displayName ?? 'traveler',
+                    userAvatar: fbUser.photoURL ?? null as any,
+                    imageUrl: 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=800&q=80',
+                    caption: mapShareCaption.trim() || `I've visited ${stamps.length} countr${stamps.length !== 1 ? 'ies' : 'y'} so far! 🌍`,
+                    locationArea: 'Worldwide',
+                    destination: 'My Travel Map',
+                    tags: ['adventure'],
+                    mood: ['wanderlust'],
+                    likes: 0,
+                    comments: 0,
+                    delay: 'now',
+                    privacy: 'public',
+                    hideExactLocation: false,
+                    blurLocation: false,
+                    hideStayLocation: false,
+                    createdAt: new Date().toISOString(),
+                    liked: false,
+                    saved: false,
+                    reactions: {},
+                    userReaction: null,
+                    reactionsEnabled: true,
+                    mapShare: {
+                      countriesCount: stamps.length,
+                      placesCount: visitedPlaces.length,
+                      topCountries: stamps.slice(0, 6).map((s: Stamp) => `${s.emoji} ${s.country}`),
+                    },
+                  });
+                  Alert.alert('🌍 Shared!', 'Your travel map has been posted to your feed.');
+                  setShowMapShareSheet(false);
+                  setMapShareCaption('');
+                } catch {
+                  Alert.alert('Error', 'Could not share your map. Please try again.');
+                } finally {
+                  setMapSharePosting(false);
+                }
+              }}
+            >
+              <Text style={{ color: mapSharePosting ? theme.colors.textMuted : theme.colors.primary, fontWeight: '700', fontSize: 15 }}>
+                {mapSharePosting ? 'Posting...' : 'Post'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ padding: theme.spacing.md }}>
+            {/* Preview card */}
+            <View style={{ backgroundColor: theme.colors.surface, borderRadius: 16, padding: 16, marginBottom: theme.spacing.md, alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 36 }}>🌍</Text>
+              <Text style={{ color: theme.colors.text, fontWeight: '800', fontSize: 16 }}>My Travel Map</Text>
+              <Text style={{ color: theme.colors.textMuted, fontSize: 13 }}>
+                {stamps.length} countr{stamps.length !== 1 ? 'ies' : 'y'} · {visitedPlaces.length} place{visitedPlaces.length !== 1 ? 's' : ''}
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 4 }}>
+                {stamps.slice(0, 6).map((s: Stamp) => (
+                  <View key={s.country} style={{ backgroundColor: theme.colors.background, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
+                    <Text style={{ color: theme.colors.text, fontSize: 12 }}>{s.emoji} {s.country}</Text>
+                  </View>
+                ))}
+                {stamps.length > 6 && (
+                  <View style={{ backgroundColor: theme.colors.background, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
+                    <Text style={{ color: theme.colors.primary, fontSize: 12, fontWeight: '700' }}>+{stamps.length - 6} more</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            {/* Caption input */}
+            <TextInput
+              value={mapShareCaption}
+              onChangeText={setMapShareCaption}
+              placeholder="Add a caption... (optional)"
+              placeholderTextColor={theme.colors.textMuted}
+              multiline
+              maxLength={300}
+              style={{ color: theme.colors.text, backgroundColor: theme.colors.surface, borderRadius: 12, padding: 12, fontSize: 14, minHeight: 80, textAlignVertical: 'top', borderWidth: 1, borderColor: theme.colors.border }}
+            />
+          </View>
+        </View>
       </Modal>
 
       {/* Create planned trip */}
@@ -524,7 +640,9 @@ export default function PassportScreen() {
       {reviewingTrip && (
         <LiveTripSummarySheet
           trip={reviewingTrip}
+          mode={reviewingTripMode}
           onClose={() => setReviewingTrip(null)}
+          onEnd={() => setReviewingTrip(null)}
         />
       )}
     </SafeAreaView>

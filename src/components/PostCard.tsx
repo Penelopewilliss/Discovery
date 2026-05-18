@@ -23,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Post, PostDelay, Comment, MediaItem, UserTag, PhotoTag } from '../types';
 import { theme } from '../theme';
+import LeafletMapView, { LMarker, LRegion } from './LeafletMapView';
 import {
   likePost, unlikePost, savePost, unsavePost,
   addCommentToFirestore, loadComments, setReaction,
@@ -131,7 +132,6 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
         ? likePost(post.id, loggedInUser.id)
         : unlikePost(post.id, loggedInUser.id);
     }
-    onUpdate();
   };
 
   const handleSave = () => {
@@ -143,7 +143,6 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
         ? savePost(post.id, loggedInUser.id)
         : unsavePost(post.id, loggedInUser.id);
     }
-    onUpdate();
   };
 
   const handleReact = (emoji: string) => {
@@ -344,8 +343,34 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
         )}
       </View>
 
-      {/* Trip Card Visual — gradient card when no map; image+strip when map included */}
-      {post.tripShare && !post.tripShare.mapIncluded ? (
+      {/* Travel Map Share Card */}
+      {post.mapShare ? (
+        <LinearGradient
+          colors={['#0f2027', '#203a43', '#2c5364']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.tripCardBanner}
+        >
+          <Text style={styles.tripCardEmoji}>🌍</Text>
+          <Text style={styles.tripCardName}>My Travel Map</Text>
+          <Text style={styles.tripCardMeta}>
+            {post.mapShare.countriesCount} countr{post.mapShare.countriesCount !== 1 ? 'ies' : 'y'} · {post.mapShare.placesCount} place{post.mapShare.placesCount !== 1 ? 's' : ''} visited
+          </Text>
+          <View style={styles.tripCardRoute}>
+            {post.mapShare.topCountries.map((c, i) => (
+              <View key={i} style={styles.tripCardStopPill}>
+                <Text style={styles.tripCardStop} numberOfLines={1}>{c}</Text>
+              </View>
+            ))}
+            {post.mapShare.countriesCount > post.mapShare.topCountries.length && (
+              <Text style={styles.tripCardMore}>  +{post.mapShare.countriesCount - post.mapShare.topCountries.length}</Text>
+            )}
+          </View>
+          <Text style={styles.tripCardWatermark}>HiddenGems · Travel Map</Text>
+        </LinearGradient>
+      ) : (
+      /* Trip Card Visual — gradient card when no map; image+strip when map included */
+      post.tripShare && !post.tripShare.mapIncluded ? (
         <LinearGradient
           colors={['#6366f1', '#8b5cf6', '#a78bfa']}
           start={{ x: 0, y: 0 }}
@@ -376,11 +401,53 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
           <Text style={styles.tripCardWatermark}>HiddenGems · Trip Plan</Text>
         </LinearGradient>
       ) : (
-      /* Image / Carousel (also used when mapIncluded — imageUrl is the static map) */
+      /* Map embed (LeafletMapView) when tripShare has coordinates */
+      post.tripShare?.mapIncluded && post.tripShare.stopCoords && post.tripShare.stopCoords.length > 0 ? (() => {
+        const coords = post.tripShare!.stopCoords!;
+        const names = post.tripShare!.stops;
+        const COLORS = ['#6366f1', '#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ec4899'];
+        const mapMarkers: LMarker[] = coords.map((c, i) => ({
+          id: `pm_${i}`,
+          latitude: c.lat,
+          longitude: c.lon,
+          color: COLORS[i % COLORS.length],
+          label: names[i] ?? `Stop ${i + 1}`,
+        }));
+        const lats = coords.map((c) => c.lat);
+        const lons = coords.map((c) => c.lon);
+        const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+        const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+        const padLat = Math.max(0.1, (maxLat - minLat) * 0.5);
+        const padLon = Math.max(0.15, (maxLon - minLon) * 0.5);
+        const mapRegion: LRegion = {
+          latitude: (minLat + maxLat) / 2,
+          longitude: (minLon + maxLon) / 2,
+          latitudeDelta: Math.max(0.4, maxLat - minLat + padLat * 2),
+          longitudeDelta: Math.max(0.5, maxLon - minLon + padLon * 2),
+        };
+        const polyline = coords.map((c) => ({ latitude: c.lat, longitude: c.lon }));
+        return (
+          <View style={{ height: 220, overflow: 'hidden' }}>
+            <LeafletMapView
+              style={{ flex: 1 }}
+              region={mapRegion}
+              markers={mapMarkers}
+              polylineCoords={polyline.length > 1 ? polyline : undefined}
+              polylineColor="#6366f1"
+              interactive={false}
+            />
+          </View>
+        );
+      })() :
+      /* Image / Carousel (fallback when mapIncluded but no stored coords, or no tripShare) */
       (() => {
+        // When the post is a trip share with a map, prefer the stored map URL
+        const mapUrl = post.tripShare?.mapIncluded ? post.tripShare.mapImageUrl : undefined;
         const rawItems: MediaItem[] = post.mediaItems && post.mediaItems.length > 0
           ? post.mediaItems
-          : [{ uri: post.imageUrl, type: 'photo' }];
+          : mapUrl
+            ? [{ uri: mapUrl, type: 'photo' as const }]
+            : [{ uri: post.imageUrl, type: 'photo' }];
         // Filter out local file:// URIs — they are unresolvable on other devices
         const items = rawItems.filter((m) => m.uri && m.uri.startsWith('http'));
         if (items.length === 0) {
@@ -465,9 +532,11 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
         );
       })()
       /* end carousel */
-      )}
-
-      {/* Trip info strip — shown below the map image when mapIncluded */}
+      )
+      /* end tripShare/image ternary */
+      )
+      /* end mapShare ternary */
+      }
       {post.tripShare?.mapIncluded && (
         <View style={styles.tripMapStrip}>
           <Text style={styles.tripMapStripName} numberOfLines={1}>

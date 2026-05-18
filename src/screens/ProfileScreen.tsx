@@ -27,7 +27,7 @@ import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, limit } from 'firebase/firestore';
-import { FirestoreStory } from '../services/postsService';
+import { FirestoreStory, deleteStory } from '../services/postsService';
 import {
   getIncomingFollowRequests, acceptFollowRequest, declineFollowRequest,
   getIncomingFriendRequests, acceptFriendRequest, declineFriendRequest,
@@ -100,6 +100,7 @@ export default function ProfileScreen() {
   const [showDelayPicker, setShowDelayPicker] = useState(false);
   const [showFollowersList, setShowFollowersList] = useState(false);
   const [showFollowingList, setShowFollowingList] = useState(false);
+  const [showFriendsList, setShowFriendsList] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showRequestsModal, setShowRequestsModal] = useState(false);
   const [myPosts, setMyPosts] = useState<Post[]>([]);
@@ -257,6 +258,47 @@ export default function ProfileScreen() {
   const username = rawUsername.includes('@') ? (rawUsername.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '') || '') : rawUsername;
   const bio = loggedInUser?.bio || '';
   const avatarUri = loggedInUser?.avatarUri || null;
+  const coverPhotoUri = loggedInUser?.coverPhotoUri || null;
+
+  const pickCoverPhoto = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access in your device settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.85,
+    });
+    if (result.canceled || !result.assets.length) return;
+    const localUri = result.assets[0].uri;
+    // Show immediately while uploading
+    setUser({ ...loggedInUser!, coverPhotoUri: localUri });
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
+    try {
+      const idToken = await firebaseUser.getIdToken();
+      const bucket = (storage.app.options as { storageBucket?: string }).storageBucket!;
+      const storagePath = `covers/${firebaseUser.uid}/cover.jpg`;
+      const encodedPath = encodeURIComponent(storagePath);
+      const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?uploadType=media&name=${encodedPath}`;
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, localUri, {
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        httpMethod: 'POST',
+        headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${idToken}` },
+      });
+      if (uploadResult.status >= 200 && uploadResult.status < 300) {
+        const { downloadTokens } = JSON.parse(uploadResult.body) as { downloadTokens: string };
+        const url = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media&token=${downloadTokens}`;
+        await setDoc(doc(db, 'users', firebaseUser.uid), { coverPhotoUri: url }, { merge: true });
+        setUser({ ...loggedInUser!, coverPhotoUri: url });
+      }
+    } catch (_) {
+      Alert.alert('Upload failed', 'Could not save cover photo. Try again.');
+    }
+  };
 
   const openEdit = () => {
     setEditName(loggedInUser?.name ?? displayName);
@@ -426,17 +468,46 @@ export default function ProfileScreen() {
 
   // ── Normal profile view ────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.container} edges={[]}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false}>
 
+        {/* Top-right controls */}
+        <View style={styles.topControls}>
+          {totalPendingRequests > 0 && (
+            <TouchableOpacity style={styles.requestsBtn} onPress={() => setShowRequestsModal(true)}>
+              <Text style={styles.settingsBtnText}>🔔</Text>
+              <View style={styles.requestsBadge}>
+                <Text style={styles.requestsBadgeText}>{totalPendingRequests}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
+            <Text style={styles.settingsBtnText}>⚙️</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Hero / Avatar */}
-        <LinearGradient
-          colors={theme.colors.gradientPrimary as [string, string]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.heroBanner}
-        >
-          <View style={styles.avatarWrapper}>
+        <View style={styles.heroBanner}>
+          {coverPhotoUri ? (
+            <Image source={{ uri: coverPhotoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : (
+            <LinearGradient
+              colors={theme.colors.gradientPrimary as [string, string]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          )}
+          {/* Dark overlay so avatar stays legible over bright photos */}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.35)']}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Camera button to change cover */}
+          <TouchableOpacity style={styles.coverEditBtn} onPress={pickCoverPhoto} activeOpacity={0.8}>
+            <Text style={{ fontSize: 16 }}>📷</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.avatarWrapper} onPress={openEdit} activeOpacity={0.85}>
             {avatarUri ? (
               <Image source={{ uri: avatarUri }} style={styles.avatar} />
             ) : (
@@ -448,8 +519,11 @@ export default function ProfileScreen() {
               </LinearGradient>
             )}
             <View style={styles.avatarBorder} />
-          </View>
-        </LinearGradient>
+            <View style={styles.avatarEditBadge}>
+              <Text style={{ fontSize: 11 }}>✏️</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.profileContent}>
           {/* Identity */}
@@ -457,26 +531,10 @@ export default function ProfileScreen() {
           <Text style={styles.username}>{username ? `@${username}` : 'Set your username'}</Text>
           {!!bio && <Text style={styles.bio}>{bio}</Text>}
 
-          {/* Action buttons */}
-          <View style={styles.profileActions}>
-            <TouchableOpacity style={styles.editBtn} onPress={openEdit}>
-              <Text style={styles.editBtnText}>✏️  Edit Profile</Text>
-            </TouchableOpacity>
-            {totalPendingRequests > 0 && (
-              <TouchableOpacity style={styles.requestsBtn} onPress={() => setShowRequestsModal(true)}>
-                <Text style={styles.settingsBtnText}>🔔</Text>
-                <View style={styles.requestsBadge}>
-                  <Text style={styles.requestsBadgeText}>{totalPendingRequests}</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
-              <Text style={styles.settingsBtnText}>⚙️</Text>
-            </TouchableOpacity>
-          </View>
 
-          {/* Stats row */}
+          {/* Stats */}
           <View style={styles.statsBlock}>
+            {/* Social stats row */}
             <View style={styles.statsRow}>
               <TouchableOpacity style={styles.stat} onPress={() => setShowFollowersList(true)}>
                 <Text style={styles.statValue}>{followerCount}</Text>
@@ -488,14 +546,19 @@ export default function ProfileScreen() {
                 <Text style={styles.statLabel}>Following</Text>
               </TouchableOpacity>
               <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{stamps.length}</Text>
-                <Text style={styles.statLabel}>Countries</Text>
+              <TouchableOpacity style={styles.stat} onPress={() => setShowFriendsList(true)}>
+                <Text style={styles.statValue}>{myFriends.length}</Text>
+                <Text style={styles.statLabel}>Friends</Text>
+              </TouchableOpacity>
+            </View>
+            {/* Info chips row */}
+            <View style={styles.statsChipsRow}>
+              <View style={styles.statsChip}>
+                <Text style={styles.statsChipText}>🌍 {stamps.length} {stamps.length === 1 ? 'country' : 'countries'}</Text>
               </View>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{myPosts.length}</Text>
-                <Text style={styles.statLabel}>Posts</Text>
+              <View style={styles.statsChipDot} />
+              <View style={styles.statsChip}>
+                <Text style={styles.statsChipText}>📸 {myPosts.length} {myPosts.length === 1 ? 'post' : 'posts'}</Text>
               </View>
             </View>
           </View>
@@ -506,7 +569,27 @@ export default function ProfileScreen() {
               <Text style={styles.sectionTitle}>My Stories</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -theme.spacing.md }}>
                 {myStories.map((story) => (
-                  <View key={story.id} style={styles.storyBubble}>
+                  <TouchableOpacity
+                    key={story.id}
+                    style={styles.storyBubble}
+                    activeOpacity={0.85}
+                    onLongPress={() => {
+                      Alert.alert(
+                        'Delete Story',
+                        'Remove this story? This cannot be undone.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete', style: 'destructive',
+                            onPress: async () => {
+                              await deleteStory(story.id);
+                              setMyStories((prev) => prev.filter((s) => s.id !== story.id));
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                  >
                     <View style={styles.storyRing}>
                       {story.image ? (
                         <Image source={{ uri: story.image }} style={styles.storyAvatar} />
@@ -519,7 +602,7 @@ export default function ProfileScreen() {
                       )}
                     </View>
                     {!!story.location && <Text style={styles.storyLabel} numberOfLines={1}>{story.location}</Text>}
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </ScrollView>
             </View>
@@ -558,37 +641,51 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          {/* Friends section */}
-          {myFriends.length > 0 && (
-            <View style={{ marginTop: 24, marginBottom: 8 }}>
-              <Text style={styles.sectionTitle}>👫 Friends ({myFriends.length})</Text>
-              {myFriends.map((fr) => (
-                <TouchableOpacity
-                  key={fr.id}
-                  onPress={() => navigation.navigate('OtherUserProfile', { userId: fr.id })}
-                  activeOpacity={0.8}
-                >
-                  <GlassCard style={{ flexDirection: 'row', alignItems: 'center', padding: 12, marginBottom: 8, gap: 12 }}>
-                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                      {fr.avatar
-                        ? <Image source={{ uri: fr.avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
-                        : <Text style={{ fontSize: 20 }}>👤</Text>}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: theme.colors.text, fontSize: 14, fontWeight: '600' }}>{fr.username}</Text>
-                      <Text style={{ color: theme.colors.textMuted, fontSize: 12, marginTop: 1 }}>@{fr.username}</Text>
-                    </View>
-                    <Text style={{ color: theme.colors.textSecondary }}>›</Text>
-                  </GlassCard>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
         </View>
 
         <View style={{ height: theme.spacing.xxl }} />
       </ScrollView>
+
+      {/* Friends List Modal */}
+      <Modal visible={showFriendsList} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.pickerModal}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>👫 Friends</Text>
+            <TouchableOpacity onPress={() => setShowFriendsList(false)}>
+              <Text style={styles.pickerClose}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={myFriends}
+            keyExtractor={(item) => item.id}
+            ListEmptyComponent={
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Text style={{ fontSize: 36, marginBottom: 12 }}>👫</Text>
+                <Text style={{ color: theme.colors.textMuted, fontSize: 15 }}>No friends yet</Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                onPress={() => { setShowFriendsList(false); navigation.navigate('OtherUserProfile', { userId: item.id }); }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.userListRow}>
+                  <View style={styles.userListAvatar}>
+                    {item.avatar
+                      ? <Image source={{ uri: item.avatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                      : <Text style={{ fontSize: 20 }}>👤</Text>}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.userListName}>{item.username}</Text>
+                    <Text style={styles.userListSub}>@{item.username}</Text>
+                  </View>
+                  <Text style={{ color: theme.colors.textSecondary }}>›</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </Modal>
 
       {/* Followers Modal */}
       <Modal visible={showFollowersList} animationType="slide" presentationStyle="pageSheet">
@@ -966,16 +1063,47 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  topControls: {
+    position: 'absolute',
+    top: 12,
+    right: theme.spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 10,
+  },
   heroBanner: {
     height: 160,
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingBottom: 0,
   },
+  coverEditBtn: {
+    position: 'absolute',
+    bottom: 10,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
   avatarWrapper: {
     position: 'absolute',
     bottom: -44,
     alignSelf: 'center',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatar: {
     width: 88,
@@ -1027,6 +1155,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
   },
   statsBlock: {
+    marginTop: theme.spacing.lg,
     marginBottom: theme.spacing.lg,
     borderRadius: theme.borderRadius.xl,
     overflow: 'hidden',
@@ -1039,6 +1168,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     backgroundColor: theme.colors.surface,
     paddingVertical: theme.spacing.md,
+  },
+  statsChipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.background,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  statsChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surface,
+  },
+  statsChipText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  statsChipDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: theme.colors.border,
   },
   stat: {
     alignItems: 'center',

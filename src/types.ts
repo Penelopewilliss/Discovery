@@ -123,7 +123,14 @@ export interface Post {
     stops: string[];
     countries: string[];
     stopCount: number;
-    mapIncluded?: boolean;  // when true, imageUrl is a static map image
+    mapIncluded?: boolean;
+    mapImageUrl?: string;  // static map image URL stored here explicitly
+    stopCoords?: Array<{ lat: number; lon: number }>;
+  };
+  mapShare?: {
+    countriesCount: number;
+    placesCount: number;
+    topCountries: string[];  // e.g. ["🇫🇷 France", "🇯🇵 Japan"]
   };
 }
 
