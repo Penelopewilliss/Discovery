@@ -56,6 +56,7 @@ function fsqToPlace(raw: FsqPlace, photoUrl: string): Place {
 
 export default function ExploreScreen({ embedded = false }: { embedded?: boolean } = {}) {
   const { isVisited, markVisited, removeVisited, createTrip, mapPins, addMapPin, updateMapPin, deleteMapPin,
+    visitedPlaces,
     activeLiveTrip, startLiveTrip, addLiveTripPin, pauseLiveTrip, resumeLiveTrip, endLiveTrip } = useUser();
   const mapRef = useRef<LeafletMapRef>(null);
   const locationSub = useRef<Location.LocationSubscription | null>(null);
@@ -460,14 +461,16 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
             }
             userLocation={userLocation}
             markers={[
-              ...(query.trim() ? [] : featured).filter((p) => p.lat && p.lon).map((place) => ({
-                id: place.id,
-                latitude: place.lat!,
-                longitude: place.lon!,
-                color: isVisited(place.id) ? '#22c55e' : '#6366f1',
-                label: place.name,
-                sublabel: place.country + (isVisited(place.id) ? ' · Visited ✅' : ''),
+              // Places you've marked as visited — green pins
+              ...visitedPlaces.filter((p) => p.lat && p.lon).map((p) => ({
+                id: `visited_${p.id}`,
+                latitude: p.lat,
+                longitude: p.lon,
+                color: '#22c55e',
+                label: p.name,
+                sublabel: `✅ Visited · ${p.country}`,
               })),
+              // Search results — blue pins
               ...(query.trim()
                 ? searchResults.filter((p) => p.lat && p.lon).map((place) => ({
                     id: place.id,
