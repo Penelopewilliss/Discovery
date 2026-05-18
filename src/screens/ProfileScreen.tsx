@@ -131,7 +131,7 @@ function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
         <Image
           source={{ uri: photoUri }}
           style={{ width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, opacity }}
-          resizeMode="contain"
+          resizeMode="cover"
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
         />
