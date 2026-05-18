@@ -233,11 +233,11 @@ export default function SearchScreen() {
           <TouchableOpacity style={styles.detailBack} onPress={() => setSelectedPost(null)}>
             <Text style={styles.detailBackText}>← Back</Text>
           </TouchableOpacity>
-          {img && <Image source={{ uri: img }} style={styles.postDetailImg} resizeMode="cover" />}
+          {!!img && <Image source={{ uri: img }} style={styles.postDetailImg} resizeMode="cover" />}
           <View style={{ paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.md }}>
             <View style={styles.postDetailAuthor}>
               <Text style={styles.postDetailHandle}>@{selectedPost.username}</Text>
-              {selectedPost.destination && (
+              {!!selectedPost.destination && (
                 <Text style={styles.postDetailDest}>📍 {selectedPost.destination}</Text>
               )}
             </View>

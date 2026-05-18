@@ -503,7 +503,7 @@ export default function PostCard({ post, onUpdate }: PostCardProps) {
                 <View style={styles.profileModalHandle} />
                 <Image source={{ uri: post.userAvatar }} style={styles.profileModalAvatar} />
                 <Text style={styles.profileModalUsername}>@{post.username}</Text>
-                {post.destination && (
+                {!!post.destination && (
                   <Text style={styles.profileModalLocation}>📍 Travels to {post.destination}</Text>
                 )}
                 <View style={styles.profileModalActions}>

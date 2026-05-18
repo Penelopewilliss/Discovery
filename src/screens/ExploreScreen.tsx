@@ -1062,7 +1062,7 @@ export default function ExploreScreen({ embedded = false }: { embedded?: boolean
         </View>
       </Modal>
       {/* ═══ Live Trip Summary / End Sheet ═══ */}
-      {activeLiveTrip && summaryMode && (
+      {!!activeLiveTrip && !!summaryMode && (
         <LiveTripSummarySheet
           trip={activeLiveTrip}
           mode={summaryMode}
