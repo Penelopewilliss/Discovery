@@ -27,7 +27,7 @@ const SCREEN_W = Dimensions.get('window').width;
 const GRID_ITEM_SIZE = Math.floor((SCREEN_W - 6) / 3);
 
 /** Thumbnail cell used in the profile photo grid — mirrors PostCard's 3 rendering modes */
-function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolean }) {
+function GridThumb({ post, dim }: { post: Post; dim?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const opacity = dim ? 0.6 : 1;
@@ -37,8 +37,129 @@ function GridThumb({ post, size, dim }: { post: Post; size: number; dim?: boolea
     return (
       <LinearGradient
         colors={['#2d1b69', '#1a1a4e', '#0f172a']}
-        style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', padding: 4, opacity }}
+        style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', padding: 4, opacity }]}
       >
+        <Text style={{ fontSize: 18 }}>✈️</Text>
+        <Text numberOfLines={2} style={{ color: '#fff', fontSize: 9, fontWeight: '700', textAlign: 'center', marginTop: 2 }}>
+          {post.tripShare.tripName ?? post.destination}
+        </Text>
+      </LinearGradient>
+    );
+  }
+
+  // ── Mode 2: Trip with map — render the same LeafletMapView as PostCard ────
+  if (post.tripShare?.mapIncluded) {
+    const coords = post.tripShare.stopCoords;
+    if (coords && coords.length > 0) {
+      const names = post.tripShare.stops;
+      const COLORS = ['#6366f1', '#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ec4899'];
+      const mapMarkers: LMarker[] = coords.map((c, i) => ({
+        id: `gm_${i}`,
+        latitude: c.lat,
+        longitude: c.lon,
+        color: COLORS[i % COLORS.length],
+        label: names[i] ?? `Stop ${i + 1}`,
+      }));
+      const lats = coords.map((c) => c.lat);
+      const lons = coords.map((c) => c.lon);
+      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+      const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+      // Use 2× padding vs PostCard so the full route fits in the small cell
+      const padLat = Math.max(0.5, (maxLat - minLat) * 1.2);
+      const padLon = Math.max(0.6, (maxLon - minLon) * 1.2);
+      const mapRegion: LRegion = {
+        latitude: (minLat + maxLat) / 2,
+        longitude: (minLon + maxLon) / 2,
+        latitudeDelta: Math.max(2.0, maxLat - minLat + padLat * 2),
+        longitudeDelta: Math.max(2.5, maxLon - minLon + padLon * 2),
+      };
+      const polyline = coords.map((c) => ({ latitude: c.lat, longitude: c.lon }));
+      return (
+        <View style={[StyleSheet.absoluteFill, { overflow: 'hidden', opacity }]}>
+          <LeafletMapView
+            style={{ flex: 1 }}
+            region={mapRegion}
+            markers={mapMarkers}
+            polylineCoords={polyline.length > 1 ? polyline : undefined}
+            polylineColor="#6366f1"
+            interactive={false}
+          />
+        </View>
+      );
+    }
+    // mapIncluded but no coords — try stored static image URL
+    const mapUrl = post.tripShare.mapImageUrl?.startsWith('http') ? post.tripShare.mapImageUrl : null;
+    if (mapUrl && !errored) {
+      return (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0f172a' }]}>
+          <Image
+            source={{ uri: mapUrl }}
+            style={[StyleSheet.absoluteFill, { opacity }]}
+            resizeMode="cover"
+            onLoad={() => setLoaded(true)}
+            onError={() => setErrored(true)}
+          />
+          {!loaded && (
+            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+              <ActivityIndicator size="small" color="#555" />
+            </View>
+          )}
+        </View>
+      );
+    }
+    // No coordinates, no image — show map-style gradient
+    return (
+      <LinearGradient
+        colors={['#0f2027', '#203a43', '#2c5364']}
+        style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', opacity }]}
+      >
+        <Text style={{ fontSize: 20 }}>🗺️</Text>
+        <Text numberOfLines={1} style={{ color: '#fff', fontSize: 8, marginTop: 2, textAlign: 'center' }}>
+          {post.destination ?? ''}
+        </Text>
+      </LinearGradient>
+    );
+  }
+
+  // ── Mode 3: Photo / video ─────────────────────────────────────────────────
+  const photoUri =
+    post.mediaItems?.find(m => m.uri?.startsWith('http'))?.uri ??
+    (post.imageUrl?.startsWith('http') ? post.imageUrl : null);
+
+  if (photoUri && !errored) {
+    return (
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: '#1a1a30' }]}>
+        <Image
+          source={{ uri: photoUri }}
+          style={[StyleSheet.absoluteFill, { opacity }]}
+          resizeMode="cover"
+          onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
+        />
+        {!loaded && (
+          <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+            <ActivityIndicator size="small" color="#555" />
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // ── Fallback: no media at all ─────────────────────────────────────────────
+  return (
+    <LinearGradient
+      colors={['#1a1a30', '#12121a']}
+      style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', opacity }]}
+    >
+      <Text style={{ fontSize: 20 }}>📍</Text>
+      {!!(post.destination || post.locationArea) && (
+        <Text numberOfLines={2} style={{ color: '#888', fontSize: 8, textAlign: 'center', marginTop: 2, paddingHorizontal: 4 }}>
+          {post.destination || post.locationArea}
+        </Text>
+      )}
+    </LinearGradient>
+  );
+}
         <Text style={{ fontSize: 18 }}>✈️</Text>
         <Text numberOfLines={2} style={{ color: '#fff', fontSize: 9, fontWeight: '700', textAlign: 'center', marginTop: 2 }}>
           {post.tripShare.tripName ?? post.destination}
@@ -800,7 +921,7 @@ export default function ProfileScreen() {
               <View style={styles.postsGrid}>
                 {myPosts.map((post) => (
                   <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
-                    <GridThumb post={post} size={GRID_ITEM_SIZE} />
+                    <GridThumb post={post} />
                     {post.mediaItems && post.mediaItems.length > 1 && (
                       <View style={styles.gridMultiBadge}>
                         <Text style={styles.gridMultiBadgeText}>⧉</Text>
@@ -868,7 +989,7 @@ export default function ProfileScreen() {
                         ]);
                       }}
                     >
-                      <GridThumb post={post} size={GRID_ITEM_SIZE} dim />
+                      <GridThumb post={post} dim />
                       <View style={styles.archiveBadge}>
                         <Text style={styles.archiveBadgeText}>📦</Text>
                       </View>
