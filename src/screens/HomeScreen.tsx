@@ -988,8 +988,8 @@ export default function HomeScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync(
       type === 'video'
-        ? { mediaTypes: ImagePicker.MediaTypeOptions.Videos, quality: 0.85, videoMaxDuration: 30 }
-        : { mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [9, 16] as [number, number], quality: 0.85 }
+        ? { mediaTypes: ImagePicker.MediaType.Videos, quality: 0.85, videoMaxDuration: 30 }
+        : { mediaTypes: ImagePicker.MediaType.Images, allowsEditing: true, aspect: [9, 16] as [number, number], quality: 0.85 }
     );
     if (!result.canceled && result.assets[0]) {
       setEditorMediaType(type);

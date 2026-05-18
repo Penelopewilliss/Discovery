@@ -112,12 +112,12 @@ export default function CreatePostScreen() {
     }
     const result = source === 'camera'
       ? await ImagePicker.launchCameraAsync({
-          mediaTypes: type === 'video' ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: type === 'video' ? ImagePicker.MediaType.Videos : ImagePicker.MediaType.Images,
           quality: 0.8,
           videoMaxDuration: 60,
         })
       : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.All,
+          mediaTypes: [ImagePicker.MediaType.Images, ImagePicker.MediaType.Videos],
           quality: 0.8,
           videoMaxDuration: 60,
           allowsMultipleSelection: true,

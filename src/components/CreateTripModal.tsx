@@ -140,7 +140,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
 
   const pickPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       quality: 0.8,
     });
     if (!result.canceled) setStopPhoto(result.assets[0].uri);
