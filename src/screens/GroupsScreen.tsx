@@ -161,7 +161,7 @@ export default function GroupsScreen() {
   };
 
   const handleAddPhoto = async (group: Group, trip: GroupTrip) => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaType.Images, quality: 0.7 });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.7 });
     if (result.canceled || !result.assets[0]) return;
     if (!uid) return;
     setUploadingPhoto(true);
