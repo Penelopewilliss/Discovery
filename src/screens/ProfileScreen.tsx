@@ -27,7 +27,7 @@ import { theme } from '../theme';
 import { auth, db, storage } from '../firebase';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, setDoc, getDocs, collection, query, where, orderBy, limit } from 'firebase/firestore';
-import { FirestoreStory, deleteStory } from '../services/postsService';
+import { FirestoreStory, deleteStory, unarchivePostInFirestore } from '../services/postsService';
 import {
   getIncomingFollowRequests, acceptFollowRequest, declineFollowRequest,
   getIncomingFriendRequests, acceptFriendRequest, declineFriendRequest,
@@ -104,6 +104,8 @@ export default function ProfileScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const [showRequestsModal, setShowRequestsModal] = useState(false);
   const [myPosts, setMyPosts] = useState<Post[]>([]);
+  const [archivedPosts, setArchivedPosts] = useState<Post[]>([]);
+  const [profileTab, setProfileTab] = useState<'posts' | 'archive'>('posts');
   const [myStories, setMyStories] = useState<FirestoreStory[]>([]);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
@@ -213,7 +215,7 @@ export default function ProfileScreen() {
 
     // Load the user's own posts
     getDocs(query(collection(db, 'posts'), where('userId', '==', uid), orderBy('createdAt', 'desc'), limit(50))).then((snap) => {
-      setMyPosts(snap.docs.map((d) => {
+      const mapped: Post[] = snap.docs.map((d) => {
         const pd = d.data();
         return {
           id: d.id, userId: pd.userId ?? '', username: pd.username ?? '',
@@ -229,8 +231,11 @@ export default function ProfileScreen() {
           createdAt: pd.createdAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
           liked: false, saved: false, reactions: pd.reactions ?? {}, userReaction: null,
           reactionsEnabled: pd.reactionsEnabled ?? true,
+          archived: pd.archived ?? false,
         } as Post;
-      }));
+      });
+      setMyPosts(mapped.filter((p) => !p.archived));
+      setArchivedPosts(mapped.filter((p) => p.archived));
     }).catch(() => {});
 
     // Load the user's own stories (last 18 h)
@@ -608,38 +613,136 @@ export default function ProfileScreen() {
             </View>
           )}
 
-          {/* My Posts grid */}
-          <View style={styles.postsSection}>
-            {myPosts.length === 0 ? (
-              <View style={styles.emptyPosts}>
-                <Text style={styles.emptyPostsIcon}>📸</Text>
-                <Text style={styles.emptyPostsText}>No posts yet</Text>
-                <Text style={styles.emptyPostsSub}>Your travel memories will appear here</Text>
-              </View>
-            ) : (
-              <View style={styles.postsGrid}>
-                {myPosts.map((post) => {
-                  const thumb = post.mediaItems?.[0]?.uri ?? post.imageUrl;
-                  return (
-                    <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
-                      {thumb ? (
-                        <Image source={{ uri: thumb }} style={styles.gridImage} resizeMode="cover" />
-                      ) : (
-                        <View style={[styles.gridImage, { backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' }]}>
-                          <Text style={{ fontSize: 28 }}>🗺️</Text>
-                        </View>
-                      )}
-                      {post.mediaItems && post.mediaItems.length > 1 && (
-                        <View style={styles.gridMultiBadge}>
-                          <Text style={styles.gridMultiBadgeText}>⧉</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
+          {/* Posts / Archive tabs */}
+          <View style={styles.profileTabs}>
+            <TouchableOpacity
+              style={[styles.profileTab, profileTab === 'posts' && styles.profileTabActive]}
+              onPress={() => setProfileTab('posts')}
+            >
+              <Text style={[styles.profileTabText, profileTab === 'posts' && styles.profileTabTextActive]}>
+                📸 Posts ({myPosts.length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.profileTab, profileTab === 'archive' && styles.profileTabActive]}
+              onPress={() => setProfileTab('archive')}
+            >
+              <Text style={[styles.profileTabText, profileTab === 'archive' && styles.profileTabTextActive]}>
+                📦 Archive ({archivedPosts.length})
+              </Text>
+            </TouchableOpacity>
           </View>
+
+          {/* Posts grid */}
+          {profileTab === 'posts' && (
+            <View style={styles.postsSection}>
+              {myPosts.length === 0 ? (
+                <View style={styles.emptyPosts}>
+                  <Text style={styles.emptyPostsIcon}>📸</Text>
+                  <Text style={styles.emptyPostsText}>No posts yet</Text>
+                  <Text style={styles.emptyPostsSub}>Your travel memories will appear here</Text>
+                </View>
+              ) : (
+                <View style={styles.postsGrid}>
+                  {myPosts.map((post) => {
+                    const thumb = post.mediaItems?.[0]?.uri ?? post.imageUrl;
+                    return (
+                      <TouchableOpacity key={post.id} style={styles.gridItem} onPress={() => setSelectedPost(post)} activeOpacity={0.85}>
+                        {thumb ? (
+                          <Image source={{ uri: thumb }} style={styles.gridImage} resizeMode="cover" />
+                        ) : (
+                          <View style={[styles.gridImage, { backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' }]}>
+                            <Text style={{ fontSize: 28 }}>🗺️</Text>
+                          </View>
+                        )}
+                        {post.mediaItems && post.mediaItems.length > 1 && (
+                          <View style={styles.gridMultiBadge}>
+                            <Text style={styles.gridMultiBadgeText}>⧉</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Archive grid */}
+          {profileTab === 'archive' && (
+            <View style={styles.postsSection}>
+              {archivedPosts.length === 0 ? (
+                <View style={styles.emptyPosts}>
+                  <Text style={styles.emptyPostsIcon}>📦</Text>
+                  <Text style={styles.emptyPostsText}>Archive is empty</Text>
+                  <Text style={styles.emptyPostsSub}>Posts you archive will appear here</Text>
+                </View>
+              ) : (
+                <View style={styles.postsGrid}>
+                  {archivedPosts.map((post) => {
+                    const thumb = post.mediaItems?.[0]?.uri ?? post.imageUrl;
+                    return (
+                      <TouchableOpacity
+                        key={post.id}
+                        style={styles.gridItem}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          Alert.alert('Archived post', undefined, [
+                            {
+                              text: '↩ Restore to profile',
+                              onPress: async () => {
+                                try {
+                                  await unarchivePostInFirestore(post.id);
+                                  setArchivedPosts((prev) => prev.filter((p) => p.id !== post.id));
+                                  setMyPosts((prev) => [{ ...post, archived: false }, ...prev]);
+                                } catch {
+                                  Alert.alert('Error', 'Could not restore post. Try again.');
+                                }
+                              },
+                            },
+                            {
+                              text: '🗑️ Delete permanently',
+                              style: 'destructive',
+                              onPress: () =>
+                                Alert.alert('Delete forever?', 'This cannot be undone.', [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Delete',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      const { deletePostFromFirestore } = await import('../services/postsService');
+                                      try {
+                                        await deletePostFromFirestore(post.id);
+                                        setArchivedPosts((prev) => prev.filter((p) => p.id !== post.id));
+                                      } catch {
+                                        Alert.alert('Error', 'Could not delete post. Try again.');
+                                      }
+                                    },
+                                  },
+                                ]),
+                            },
+                            { text: 'Cancel', style: 'cancel' },
+                          ]);
+                        }}
+                      >
+                        <View style={styles.archiveOverlay} />
+                        {thumb ? (
+                          <Image source={{ uri: thumb }} style={[styles.gridImage, { opacity: 0.6 }]} resizeMode="cover" />
+                        ) : (
+                          <View style={[styles.gridImage, { backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center', opacity: 0.6 }]}>
+                            <Text style={{ fontSize: 28 }}>🗺️</Text>
+                          </View>
+                        )}
+                        <View style={styles.archiveBadge}>
+                          <Text style={styles.archiveBadgeText}>📦</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
 
         </View>
 
@@ -1622,6 +1725,48 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 13,
     textAlign: 'center',
+  },
+  profileTabs: {
+    flexDirection: 'row',
+    marginHorizontal: theme.spacing.md,
+    marginBottom: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 12,
+    padding: 4,
+  },
+  profileTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  profileTabActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  profileTabText: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  profileTabTextActive: {
+    color: '#fff',
+  },
+  archiveOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  archiveBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    zIndex: 2,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  archiveBadgeText: {
+    fontSize: 12,
   },
   editHeader: {
     flexDirection: 'row',

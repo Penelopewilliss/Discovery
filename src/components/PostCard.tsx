@@ -28,7 +28,7 @@ import {
   likePost, unlikePost, savePost, unsavePost,
   addCommentToFirestore, loadComments, setReaction,
   followUser, unfollowUser, checkFollowing, saveStory,
-  deletePostFromFirestore,
+  deletePostFromFirestore, archivePostInFirestore,
 } from '../services/postsService';
 import { useUser } from '../context/UserContext';
 import { db } from '../firebase';
@@ -82,9 +82,10 @@ interface PostCardProps {
   post: Post;
   onUpdate: () => void;
   onDelete?: () => void;
+  onArchive?: () => void;
 }
 
-export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
+export default function PostCard({ post, onUpdate, onDelete, onArchive }: PostCardProps) {
   const { user: loggedInUser } = useUser();
   const isOwnPost = post.userId === loggedInUser?.id || post.userId === 'user_1';
   const [following, setFollowing] = useState(false);
@@ -312,7 +313,26 @@ export default function PostCard({ post, onUpdate, onDelete }: PostCardProps) {
             onPress={() => {
               Alert.alert('Post options', undefined, [
                 {
-                  text: 'Delete post',
+                  text: '📦 Move to Archive',
+                  onPress: () => {
+                    Alert.alert('Archive post?', 'It will be hidden from your feed and saved in your archive.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Archive',
+                        onPress: async () => {
+                          try {
+                            await archivePostInFirestore(post.id);
+                            onArchive?.();
+                          } catch {
+                            Alert.alert('Error', 'Could not archive post. Try again.');
+                          }
+                        },
+                      },
+                    ]);
+                  },
+                },
+                {
+                  text: '🗑️ Delete post',
                   style: 'destructive',
                   onPress: () => {
                     Alert.alert('Delete post?', 'This cannot be undone.', [

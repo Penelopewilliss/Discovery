@@ -1110,6 +1110,7 @@ export default function HomeScreen() {
               post={item}
               onUpdate={forceUpdate}
               onDelete={() => setFeedPosts((prev) => prev.filter((p) => p.id !== item.id))}
+              onArchive={() => setFeedPosts((prev) => prev.filter((p) => p.id !== item.id))}
             />
           )}
         contentContainerStyle={styles.feed}

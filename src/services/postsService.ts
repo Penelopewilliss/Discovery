@@ -119,6 +119,14 @@ export async function deletePostFromFirestore(postId: string): Promise<void> {
   await deleteDoc(doc(db, 'posts', postId));
 }
 
+export async function archivePostInFirestore(postId: string): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), { archived: true });
+}
+
+export async function unarchivePostInFirestore(postId: string): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), { archived: false });
+}
+
 // ─── Feed Listener ──────────────────────────────────────────────────────────
 
 export function listenToFeed(
@@ -157,7 +165,7 @@ export function listenToFeed(
     const savedPostIds: string[] = userData.savedPostIds ?? [];
     const reactionsByPost: Record<string, string> = userData.reactionsByPost ?? {};
 
-    const posts: Post[] = snapshot.docs.map((d) => {
+    let posts: Post[] = snapshot.docs.map((d) => {
       const data = d.data();
       return {
         id: d.id,
@@ -189,8 +197,13 @@ export function listenToFeed(
         taggedUsers: data.taggedUsers ?? [],
         photoTags: data.photoTags ?? [],
         tripShare: data.tripShare ?? undefined,
+        mapShare: data.mapShare ?? undefined,
+        archived: data.archived ?? false,
       } as Post;
     });
+
+      // Filter out archived posts from the feed
+      posts = posts.filter((p) => !p.archived);
 
       // Sort by createdAt descending (client-side since we dropped orderBy to avoid composite index)
       posts.sort((a, b) => {

@@ -132,6 +132,7 @@ export interface Post {
     placesCount: number;
     topCountries: string[];  // e.g. ["🇫🇷 France", "🇯🇵 Japan"]
   };
+  archived?: boolean;
 }
 
 export interface Place {
