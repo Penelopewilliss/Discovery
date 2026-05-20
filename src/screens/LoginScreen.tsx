@@ -15,15 +15,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
 import { theme } from '../theme';
-import { useUser } from '../context/UserContext';
 import { AuthStackParamList } from '../navigation/types';
 
 export default function LoginScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
-  const { setUser } = useUser();
 
   const onBack = () => navigation.goBack();
   const onSignUp = () => navigation.navigate('SignUp');
@@ -39,11 +36,8 @@ export default function LoginScreen() {
     }
     setLoading(true);
     try {
-      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const snap = await getDoc(doc(db, 'users', cred.user.uid));
-      if (snap.exists()) {
-        setUser(snap.data() as any);
-      }
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      // onAuthStateChanged in UserContext handles setting the user state
     } catch (e: any) {
       const msg =
         e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
