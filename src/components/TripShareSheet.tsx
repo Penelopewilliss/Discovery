@@ -9,11 +9,13 @@ import {
   Alert,
   Switch,
   ActivityIndicator,
+  Image,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 import { Trip, TripStop, useUser } from '../context/UserContext';
-import { createPostInFirestore, saveStory, uploadPostMedia } from '../services/postsService';
+import { createPostInFirestore, saveStory, uploadPostMedia, uploadStoryMedia } from '../services/postsService';
 import { MediaItem } from '../types';
 import LeafletMapView, { LMarker, LRegion } from './LeafletMapView';
 
@@ -71,6 +73,7 @@ export default function TripShareSheet({ trip, onClose, photos }: Props) {
   const [privacy, setPrivacy] = useState<'public' | 'followers'>('public');
   const [includeMap, setIncludeMap] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadingStory, setUploadingStory] = useState(false);
 
   if (!trip) return null;
 
@@ -104,13 +107,9 @@ export default function TripShareSheet({ trip, onClose, photos }: Props) {
       // Upload any local photo URIs to Firebase Storage
       let uploadedPhotoUrls: string[] = [];
       if (photos && photos.length > 0) {
-        try {
-          const localItems: MediaItem[] = photos.map((uri) => ({ uri, type: 'photo' as const }));
-          const uploaded = await uploadPostMedia(userId, postId, localItems);
-          uploadedPhotoUrls = uploaded.map((m) => m.uri).filter((u) => u.startsWith('http'));
-        } catch (_) {
-          // Continue without photos if upload fails
-        }
+        const localItems: MediaItem[] = photos.map((uri) => ({ uri, type: 'photo' as const }));
+        const uploaded = await uploadPostMedia(userId, postId, localItems);
+        uploadedPhotoUrls = uploaded.map((m) => m.uri).filter((u) => u.startsWith('http'));
       }
 
       // Build mediaItems: map image first, then photos
@@ -170,12 +169,24 @@ export default function TripShareSheet({ trip, onClose, photos }: Props) {
   };
 
   const shareAsStory = async () => {
+    setUploadingStory(true);
     try {
+      // Use first trip photo as story background (if available), otherwise use map/bg
+      let storyImageUrl: string | null = postImageUrl || null;
+      if (photos && photos.length > 0) {
+        const firstPhoto = photos[0];
+        if (firstPhoto.startsWith('file://') || firstPhoto.startsWith('content://')) {
+          // Upload local URI to Firebase Storage
+          storyImageUrl = await uploadStoryMedia(user?.id ?? 'user_1', firstPhoto, 'photo');
+        } else {
+          storyImageUrl = firstPhoto; // already a remote URL
+        }
+      }
       await saveStory({
         userId: user?.id ?? '',
         username: user?.username ?? 'traveler',
         userAvatar: user?.avatarUri ?? null,
-        image: postImageUrl || null,
+        image: storyImageUrl,
         videoUri: null,
         overlayText: `${trip.name}\n${stopNames.slice(0, 3).join(' → ')}${stopNames.length > 3 ? ` +${stopNames.length - 3}` : ''}`,
         location: countries[0] ?? stopNames[0] ?? null,
@@ -187,6 +198,8 @@ export default function TripShareSheet({ trip, onClose, photos }: Props) {
       ]);
     } catch (e: any) {
       Alert.alert('Failed', e.message ?? 'Could not share story. Try again.');
+    } finally {
+      setUploadingStory(false);
     }
   };
 
@@ -253,7 +266,19 @@ export default function TripShareSheet({ trip, onClose, photos }: Props) {
             </LinearGradient>
           )}
 
-          {/* Caption */}
+          {/* Photo preview strip */}
+          {photos && photos.length > 0 && (
+            <View style={styles.photoSection}>
+              <Text style={styles.photoSectionLabel}>📷 {photos.length} photo{photos.length !== 1 ? 's' : ''} included</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {photos.map((uri, i) => (
+                  <Image key={i} source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Caption */}}
           <TextInput
             style={styles.captionInput}
             placeholder="Add a caption... (optional)"
@@ -287,8 +312,11 @@ export default function TripShareSheet({ trip, onClose, photos }: Props) {
             }
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.storyBtn} onPress={shareAsStory}>
-            <Text style={styles.storyBtnText}>📸  Share as Story</Text>
+          <TouchableOpacity style={[styles.storyBtn, uploadingStory && { opacity: 0.6 }]} onPress={shareAsStory} disabled={uploadingStory}>
+            {uploadingStory
+              ? <ActivityIndicator color={theme.colors.primary} />
+              : <Text style={styles.storyBtnText}>📸  Share as Story</Text>
+            }
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
@@ -413,4 +441,7 @@ const styles = StyleSheet.create({
   storyBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   cancelBtn: { paddingVertical: 12, alignItems: 'center' },
   cancelText: { color: theme.colors.textMuted, fontSize: 15 },
+  photoSection: { marginBottom: 10 },
+  photoSectionLabel: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '600', marginBottom: 6 },
+  photoThumb: { width: 64, height: 64, borderRadius: 8 },
 });
