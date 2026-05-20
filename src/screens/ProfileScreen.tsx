@@ -637,6 +637,9 @@ export default function ProfileScreen() {
               </View>
             </TouchableOpacity>
           )}
+          <TouchableOpacity style={styles.settingsBtn} onPress={handleLogout}>
+            <Text style={styles.settingsBtnText}>🚪</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
             <Text style={styles.settingsBtnText}>⚙️</Text>
           </TouchableOpacity>
