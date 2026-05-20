@@ -276,6 +276,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
   };
 
   return (
+    <>
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
       <SafeAreaView style={styles.root}>
         {/* Header */}
@@ -492,6 +493,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
         onClose();
       }}
     />
+    </>
   );
 }
 
