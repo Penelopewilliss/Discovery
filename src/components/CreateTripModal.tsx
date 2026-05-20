@@ -57,6 +57,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
 
   // Share sheet shown after saving
   const [shareTrip, setShareTrip] = useState<Trip | null>(null);
+  const [sharePhotos, setSharePhotos] = useState<string[]>([]);
 
   // Trip-level cover photo
   const [coverPhoto, setCoverPhoto] = useState<string | undefined>();
@@ -272,6 +273,13 @@ export default function CreateTripModal({ visible, onClose }: Props) {
     setStops([]);
     setCoverPhoto(undefined);
 
+    // Collect photos: cover photo first, then per-stop photos
+    const allPhotos: string[] = [
+      ...(coverPhoto ? [coverPhoto] : []),
+      ...stops.map((s) => s.photoUri).filter((u): u is string => !!u),
+    ];
+    setSharePhotos(allPhotos);
+
     // Show share sheet — user can optionally share to feed / story
     setShareTrip(shareableTrip);
   };
@@ -283,6 +291,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
     setPrivacy('public');
     setStops([]);
     setCoverPhoto(undefined);
+    setSharePhotos([]);
     setShareTrip(null);
     resetStopForm();
     setShowAddStop(false);
@@ -517,8 +526,10 @@ export default function CreateTripModal({ visible, onClose }: Props) {
     {/* Share to feed / story immediately after saving */}
     <TripShareSheet
       trip={shareTrip}
+      photos={sharePhotos}
       onClose={() => {
         setShareTrip(null);
+        setSharePhotos([]);
         onClose();
       }}
     />

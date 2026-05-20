@@ -8,11 +8,13 @@ import {
   StyleSheet,
   Alert,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 import { Trip, TripStop, useUser } from '../context/UserContext';
-import { createPostInFirestore, saveStory } from '../services/postsService';
+import { createPostInFirestore, saveStory, uploadPostMedia } from '../services/postsService';
+import { MediaItem } from '../types';
 import LeafletMapView, { LMarker, LRegion } from './LeafletMapView';
 
 const BG_IMAGES = [
@@ -60,13 +62,15 @@ function stopsToRegion(stops: TripStop[]): LRegion {
 interface Props {
   trip: Trip | null;
   onClose: () => void;
+  photos?: string[]; // local or remote photo URIs from trip stops/cover
 }
 
-export default function TripShareSheet({ trip, onClose }: Props) {
+export default function TripShareSheet({ trip, onClose, photos }: Props) {
   const { user } = useUser();
   const [caption, setCaption] = useState('');
   const [privacy, setPrivacy] = useState<'public' | 'followers'>('public');
   const [includeMap, setIncludeMap] = useState(true);
+  const [uploading, setUploading] = useState(false);
 
   if (!trip) return null;
 
@@ -92,48 +96,77 @@ export default function TripShareSheet({ trip, onClose }: Props) {
   const postImageUrl = includeMap && staticMapUrl ? staticMapUrl : bgImage;
 
   const shareToFeed = async () => {
-    await createPostInFirestore({
-      id: `trip_post_${Date.now()}`,
-      userId: user?.id ?? 'user_1',
-      username: user?.username ?? 'traveler',
-      userAvatar: user?.avatarUri ?? null,
-      imageUrl: postImageUrl,
-      caption: caption.trim() || `Just shared my trip: ${trip.name} ✈️`,
-      locationArea: stopNames[0] ?? 'Unknown',
-      destination: stopNames.join(' → '),
-      tags: ['adventure'],
-      mood: ['wanderlust'],
-      likes: 0,
-      likesCount: 0,
-      comments: 0,
-      commentsCount: 0,
-      delay: 'now',
-      privacy,
-      hideExactLocation: false,
-      blurLocation: false,
-      hideStayLocation: false,
-      createdAt: new Date().toISOString(),
-      liked: false,
-      saved: false,
-      reactions: {},
-      userReaction: null,
-      reactionsEnabled: true,
-      media: postImageUrl ? [{ uri: postImageUrl, type: 'photo' }] : [],
-      tripShare: {
-        tripName: trip.name,
-        stops: stopNames,
-        countries,
-        stopCount: trip.stops.length,
-        mapIncluded: includeMap && !!staticMapUrl,
-        mapImageUrl: includeMap && staticMapUrl ? staticMapUrl : undefined,
-        stopCoords: trip.stops
-          .filter((s) => s.lat && s.lon)
-          .map((s) => ({ lat: s.lat, lon: s.lon })),
-      },
-    });
-    Alert.alert('Posted! 🎉', 'Your trip card is live on the feed.', [
-      { text: 'OK', onPress: onClose },
-    ]);
+    setUploading(true);
+    try {
+      const postId = `trip_post_${Date.now()}`;
+      const userId = user?.id ?? 'user_1';
+
+      // Upload any local photo URIs to Firebase Storage
+      let uploadedPhotoUrls: string[] = [];
+      if (photos && photos.length > 0) {
+        try {
+          const localItems: MediaItem[] = photos.map((uri) => ({ uri, type: 'photo' as const }));
+          const uploaded = await uploadPostMedia(userId, postId, localItems);
+          uploadedPhotoUrls = uploaded.map((m) => m.uri).filter((u) => u.startsWith('http'));
+        } catch (_) {
+          // Continue without photos if upload fails
+        }
+      }
+
+      // Build mediaItems: map image first, then photos
+      const mediaItems: MediaItem[] = [
+        ...(postImageUrl ? [{ uri: postImageUrl, type: 'photo' as const }] : []),
+        ...uploadedPhotoUrls.map((uri) => ({ uri, type: 'photo' as const })),
+      ];
+
+      await createPostInFirestore({
+        id: postId,
+        userId,
+        username: user?.username ?? 'traveler',
+        userAvatar: user?.avatarUri ?? null,
+        imageUrl: postImageUrl,
+        caption: caption.trim() || `Just shared my trip: ${trip.name} ✈️`,
+        locationArea: stopNames[0] ?? 'Unknown',
+        destination: stopNames.join(' → '),
+        tags: ['adventure'],
+        mood: ['wanderlust'],
+        likes: 0,
+        likesCount: 0,
+        comments: 0,
+        commentsCount: 0,
+        delay: 'now',
+        privacy,
+        hideExactLocation: false,
+        blurLocation: false,
+        hideStayLocation: false,
+        createdAt: new Date().toISOString(),
+        liked: false,
+        saved: false,
+        reactions: {},
+        userReaction: null,
+        reactionsEnabled: true,
+        mediaItems,
+        tripShare: {
+          tripName: trip.name,
+          stops: stopNames,
+          countries,
+          stopCount: trip.stops.length,
+          mapIncluded: includeMap && !!staticMapUrl,
+          mapImageUrl: includeMap && staticMapUrl ? staticMapUrl : undefined,
+          stopCoords: trip.stops
+            .filter((s) => s.lat && s.lon)
+            .map((s) => ({ lat: s.lat, lon: s.lon })),
+          photos: uploadedPhotoUrls.length > 0 ? uploadedPhotoUrls : undefined,
+        },
+      });
+      Alert.alert('Posted! 🎉', 'Your trip card is live on the feed.', [
+        { text: 'OK', onPress: onClose },
+      ]);
+    } catch (e: any) {
+      Alert.alert('Failed', e.message ?? 'Could not post. Try again.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const shareAsStory = async () => {
@@ -247,8 +280,11 @@ export default function TripShareSheet({ trip, onClose }: Props) {
             ))}
           </View>
 
-          <TouchableOpacity style={styles.feedBtn} onPress={shareToFeed}>
-            <Text style={styles.feedBtnText}>📰  Post to Feed</Text>
+          <TouchableOpacity style={[styles.feedBtn, uploading && { opacity: 0.6 }]} onPress={shareToFeed} disabled={uploading}>
+            {uploading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.feedBtnText}>📰  Post to Feed</Text>
+            }
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.storyBtn} onPress={shareAsStory}>

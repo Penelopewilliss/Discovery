@@ -608,6 +608,25 @@ export default function PostCard({ post, onUpdate, onDelete, onArchive }: PostCa
         </View>
       )}
 
+      {/* Trip photos strip */}
+      {post.tripShare?.photos && post.tripShare.photos.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginHorizontal: 16, marginBottom: 8 }}
+          contentContainerStyle={{ gap: 6 }}
+        >
+          {post.tripShare.photos.map((uri, i) => (
+            <Image
+              key={i}
+              source={{ uri }}
+              style={{ width: 110, height: 110, borderRadius: 10 }}
+              resizeMode="cover"
+            />
+          ))}
+        </ScrollView>
+      )}
+
       {/* Tags */}
       <View style={styles.tags}>
         {post.tags.map((tag) => {

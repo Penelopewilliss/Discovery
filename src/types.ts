@@ -126,6 +126,7 @@ export interface Post {
     mapIncluded?: boolean;
     mapImageUrl?: string;  // static map image URL stored here explicitly
     stopCoords?: Array<{ lat: number; lon: number }>;
+    photos?: string[];     // uploaded photo URLs from trip stops
   };
   mapShare?: {
     countriesCount: number;
