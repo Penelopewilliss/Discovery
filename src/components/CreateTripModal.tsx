@@ -58,6 +58,9 @@ export default function CreateTripModal({ visible, onClose }: Props) {
   // Share sheet shown after saving
   const [shareTrip, setShareTrip] = useState<Trip | null>(null);
 
+  // Trip-level cover photo
+  const [coverPhoto, setCoverPhoto] = useState<string | undefined>();
+
   // Add-stop sheet state
   const [showAddStop, setShowAddStop] = useState(false);
   const [editingStopId, setEditingStopId] = useState<string | null>(null);
@@ -151,6 +154,14 @@ export default function CreateTripModal({ visible, onClose }: Props) {
     if (!result.canceled) setStopPhoto(result.assets[0].uri);
   };
 
+  const pickCoverPhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      quality: 0.8,
+    });
+    if (!result.canceled) setCoverPhoto(result.assets[0].uri);
+  };
+
   const confirmStop = () => {
     if (!stopName.trim()) {
       Alert.alert('Place required', 'Search for and select a place before adding this stop.');
@@ -218,6 +229,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
       privacy,
       status: 'active',
       source: 'manual',
+      coverPhoto,
     };
 
     // Mark chosen stops as visited
@@ -258,6 +270,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
     setEndDate('');
     setPrivacy('public');
     setStops([]);
+    setCoverPhoto(undefined);
 
     // Show share sheet — user can optionally share to feed / story
     setShareTrip(shareableTrip);
@@ -269,6 +282,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
     setEndDate('');
     setPrivacy('public');
     setStops([]);
+    setCoverPhoto(undefined);
     setShareTrip(null);
     resetStopForm();
     setShowAddStop(false);
@@ -329,6 +343,21 @@ export default function CreateTripModal({ visible, onClose }: Props) {
                 />
               </View>
             </View>
+
+            {/* Cover Photo */}
+            <Text style={styles.label}>Cover Photo</Text>
+            <TouchableOpacity style={styles.photoPickerBtn} onPress={pickCoverPhoto}>
+              {coverPhoto ? (
+                <Image source={{ uri: coverPhoto }} style={styles.coverPhotoPreview} resizeMode="cover" />
+              ) : (
+                <Text style={styles.photoPickerText}>📷  Add a cover photo for this trip</Text>
+              )}
+            </TouchableOpacity>
+            {coverPhoto && (
+              <TouchableOpacity onPress={() => setCoverPhoto(undefined)}>
+                <Text style={styles.removePhoto}>Remove photo</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Privacy */}
             <Text style={styles.label}>Who can see this?</Text>
@@ -705,6 +734,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   photoPreview: {
+    width: '100%',
+    height: 140,
+    resizeMode: 'cover',
+  },
+  coverPhotoPreview: {
     width: '100%',
     height: 140,
     resizeMode: 'cover',

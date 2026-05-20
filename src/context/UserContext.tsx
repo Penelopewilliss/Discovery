@@ -70,7 +70,7 @@ export type LiveTrip = {
   status: 'active' | 'paused';
 };
 
-export type CompletedLiveTrip = LiveTrip & { endedAt: number; source?: 'live' | 'manual' };
+export type CompletedLiveTrip = LiveTrip & { endedAt: number; source?: 'live' | 'manual'; coverPhoto?: string };
 
 export type TripStory = {
   id: string;

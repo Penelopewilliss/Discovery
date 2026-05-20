@@ -347,6 +347,13 @@ export default function PassportScreen() {
               return (
                 <TouchableOpacity key={trip.id} activeOpacity={0.85} onPress={() => { setReviewingTripMode('view'); setReviewingTrip(trip); }}>
                   <GlassCard style={s.tripCard}>
+                    {/* Cover photo — use trip.coverPhoto, fallback to first pin with photo */}
+                    {(() => {
+                      const cover = trip.coverPhoto ?? trip.pins.find((p) => p.photoUri)?.photoUri;
+                      return cover ? (
+                        <Image source={{ uri: cover }} style={s.tripCoverPhoto} resizeMode="cover" />
+                      ) : null;
+                    })()}
                     <View style={s.tripCardHeader}>
                       <View style={{ flex: 1 }}>
                         <Text style={s.tripCardName}>{trip.name}</Text>
@@ -786,7 +793,8 @@ const s = StyleSheet.create({
 
   // Trips
   sectionNote: { color: theme.colors.textMuted, fontSize: 12, textAlign: 'center', marginBottom: 4 },
-  tripCard: { padding: 16, gap: 8 },
+  tripCard: { padding: 16, gap: 8, overflow: 'hidden' },
+  tripCoverPhoto: { width: '100%', height: 160, borderRadius: 10, marginBottom: 4 },
   tripCardHeader: { flexDirection: 'row', alignItems: 'flex-start' },
   tripCardName: { color: '#fff', fontSize: 16, fontWeight: '700' },
   tripCardMeta: { color: theme.colors.textMuted, fontSize: 12, marginTop: 2 },
