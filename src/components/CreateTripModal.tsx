@@ -19,6 +19,8 @@ import { theme } from '../theme';
 import { useUser } from '../context/UserContext';
 import { LiveTripPin, CompletedLiveTrip, VisitedPlace } from '../context/UserContext';
 import { searchFsqPlaces, FsqPlace } from '../utils/foursquare';
+import TripShareSheet from './TripShareSheet';
+import { Trip, TripStop } from '../context/UserContext';
 
 type ManualStop = {
   id: string;
@@ -52,6 +54,9 @@ export default function CreateTripModal({ visible, onClose }: Props) {
   const [endDate, setEndDate] = useState('');
   const [privacy, setPrivacy] = useState<CompletedLiveTrip['privacy']>('public');
   const [stops, setStops] = useState<ManualStop[]>([]);
+
+  // Share sheet shown after saving
+  const [shareTrip, setShareTrip] = useState<Trip | null>(null);
 
   // Add-stop sheet state
   const [showAddStop, setShowAddStop] = useState(false);
@@ -233,13 +238,29 @@ export default function CreateTripModal({ visible, onClose }: Props) {
 
     addManualTrip(trip);
 
-    // Reset
+    // Build a Trip object for the share sheet
+    const shareableTripStops: TripStop[] = stops.map((s) => ({
+      name: s.placeName,
+      country: s.country,
+      lat: s.lat,
+      lon: s.lon,
+    }));
+    const shareableTrip: Trip = {
+      id: trip.id,
+      name: tripName.trim(),
+      stops: shareableTripStops,
+      createdAt: new Date(startedAt).toISOString(),
+    };
+
+    // Reset form
     setTripName('');
     setStartDate('');
     setEndDate('');
     setPrivacy('public');
     setStops([]);
-    onClose();
+
+    // Show share sheet — user can optionally share to feed / story
+    setShareTrip(shareableTrip);
   };
 
   const resetAll = () => {
@@ -248,6 +269,7 @@ export default function CreateTripModal({ visible, onClose }: Props) {
     setEndDate('');
     setPrivacy('public');
     setStops([]);
+    setShareTrip(null);
     resetStopForm();
     setShowAddStop(false);
     onClose();
@@ -461,6 +483,15 @@ export default function CreateTripModal({ visible, onClose }: Props) {
         </Modal>
       </SafeAreaView>
     </Modal>
+
+    {/* Share to feed / story immediately after saving */}
+    <TripShareSheet
+      trip={shareTrip}
+      onClose={() => {
+        setShareTrip(null);
+        onClose();
+      }}
+    />
   );
 }
 
