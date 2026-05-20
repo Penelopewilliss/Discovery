@@ -22,7 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { theme } from '../theme';
-import { listenToFeed, listenToStories, saveStory, uploadStoryMedia, FirestoreStory } from '../services/postsService';
+import { listenToFeed, listenToStories, saveStory, uploadStoryMedia, deleteStory, FirestoreStory } from '../services/postsService';
 import { getDocs, query, collection, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -51,21 +51,21 @@ type Story = {
   timestamp: string;
   overlayText?: string | null;
   location?: string | null;
-  music?: { title: string; artist: string } | null;
+  music?: { title: string; artist: string; previewUrl?: string } | null;
   mentions?: Mention[];
 };
 
 const MOCK_MUSIC = [
-  { title: 'Cruel Summer', artist: 'Taylor Swift' },
-  { title: 'Levitating', artist: 'Dua Lipa' },
-  { title: 'Blinding Lights', artist: 'The Weeknd' },
-  { title: 'Watermelon Sugar', artist: 'Harry Styles' },
-  { title: 'Golden Hour', artist: 'JVKE' },
-  { title: 'Firestone', artist: 'Kygo ft. Conrad' },
-  { title: 'Dreams', artist: 'Fleetwood Mac' },
-  { title: 'Upside Down', artist: 'Jack Johnson' },
-  { title: 'Sunflower', artist: 'Rex Orange County' },
-  { title: 'As It Was', artist: 'Harry Styles' },
+  { title: 'Cruel Summer', artist: 'Taylor Swift', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+  { title: 'Levitating', artist: 'Dua Lipa', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
+  { title: 'Blinding Lights', artist: 'The Weeknd', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
+  { title: 'Watermelon Sugar', artist: 'Harry Styles', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3' },
+  { title: 'Golden Hour', artist: 'JVKE', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3' },
+  { title: 'Firestone', artist: 'Kygo ft. Conrad', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3' },
+  { title: 'Dreams', artist: 'Fleetwood Mac', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3' },
+  { title: 'Upside Down', artist: 'Jack Johnson', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3' },
+  { title: 'Sunflower', artist: 'Rex Orange County', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3' },
+  { title: 'As It Was', artist: 'Harry Styles', previewUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3' },
 ];
 
 const PRESET_LOCATIONS = [
@@ -108,18 +108,22 @@ function StoryViewer({
   seenIds,
   onClose,
   onSeen,
+  onDelete,
 }: {
   stories: Story[];
   startIndex: number;
   seenIds: string[];
   onClose: () => void;
   onSeen: (id: string) => void;
+  onDelete?: (id: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [index, setIndex] = useState(startIndex);
   const progress = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
+  // Use a plain object ref — avoids importing the Audio type at module level
+  const soundRef = useRef<{ unloadAsync: () => Promise<void> } | null>(null);
 
   const story = stories[index];
 
@@ -157,6 +161,64 @@ function StoryViewer({
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [index]);
+
+  // Play music preview whenever the story changes
+  useEffect(() => {
+    let mounted = true;
+    const loadAudio = async () => {
+      // Unload any previous sound
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current = null;
+      }
+      const url = story?.music?.previewUrl;
+      if (!url) return;
+      try {
+        // Lazy-import so a missing ExponentAV native module never crashes the app
+        const { Audio } = await import('expo-av');
+        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: url },
+          { shouldPlay: true, volume: 0.7, isLooping: true },
+        );
+        if (mounted) soundRef.current = sound;
+        else await sound.unloadAsync().catch(() => {});
+      } catch (_) {
+        // expo-av unavailable (e.g. Expo Go without the module) — skip audio silently
+      }
+    };
+    loadAudio();
+    return () => {
+      mounted = false;
+      soundRef.current?.unloadAsync().catch(() => {});
+      soundRef.current = null;
+    };
+  }, [index]);
+
+  // Stop audio when viewer unmounts
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync().catch(() => {});
+      soundRef.current = null;
+    };
+  }, []);
+
+  const handleDelete = () => {
+    Alert.alert('Delete Story', 'Remove this story?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: () => {
+          deleteStory(story.id).catch(() => {});
+          onDelete?.(story.id);
+          if (index < stories.length - 1) {
+            setIndex((i) => i + 1);
+          } else {
+            onClose();
+          }
+        },
+      },
+    ]);
+  };
 
   if (!story) return null;
 
@@ -208,9 +270,16 @@ function StoryViewer({
             {!!formatStoryAge(story) && <Text style={sv.headerTime}>{formatStoryAge(story)}</Text>}
           </View>
         </View>
-        <TouchableOpacity onPress={onClose} style={sv.closeBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={sv.closeTxt}>✕</Text>
-        </TouchableOpacity>
+        <View style={sv.headerRight}>
+          {story.isOwn && !story.isOwnPlaceholder && (
+            <TouchableOpacity onPress={handleDelete} style={sv.deleteBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={sv.deleteTxt}>🗑️</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onClose} style={sv.closeBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={sv.closeTxt}>✕</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tap areas */}
@@ -299,11 +368,14 @@ const sv = StyleSheet.create({
     zIndex: 10,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerAvatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: '#fff' },
   headerUsername: { color: '#fff', fontSize: 14, fontWeight: '700' },
   headerTime: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
   closeBtn: { padding: 4 },
   closeTxt: { color: '#fff', fontSize: 20, fontWeight: '300' },
+  deleteBtn: { padding: 4 },
+  deleteTxt: { fontSize: 20 },
   tapRow: { ...StyleSheet.absoluteFillObject, flexDirection: 'row', zIndex: 5 },
   tapLeft: { flex: 3 },
   tapRight: { flex: 7 },
@@ -350,7 +422,7 @@ const sv = StyleSheet.create({
 type StoryOverlay = {
   text: string | null;
   location: string | null;
-  music: { title: string; artist: string } | null;
+  music: { title: string; artist: string; previewUrl?: string } | null;
   mentions: Mention[];
   delay: PostDelay;
 };
@@ -896,8 +968,12 @@ export default function HomeScreen() {
     const unsub = listenToStories(user.id, (fsStories: FirestoreStory[]) => {
       setStories((prev) => {
         const placeholder = prev.find((s) => s.isOwnPlaceholder) ?? OWN_PLACEHOLDER;
-        // Keep locally-added own stories (own_* ids) that aren't in Firestore yet
-        const localOwn = prev.filter((s) => !s.isOwnPlaceholder && s.isOwn && s.id.startsWith('own_'));
+        // Once the user's story exists in Firestore, drop the local own_* copy to avoid duplicates.
+        // Keep local own_* stories only while the upload/save is still in flight.
+        const hasRemoteOwn = fsStories.some((s) => s.userId === user.id);
+        const localOwn = hasRemoteOwn
+          ? []
+          : prev.filter((s) => !s.isOwnPlaceholder && s.isOwn && s.id.startsWith('own_'));
         // Deduplicate: one bubble per user (most recent story wins; list is already sorted desc)
         const seen = new Set<string>();
         const uniqueStories = fsStories.filter((s) => {
@@ -1176,6 +1252,9 @@ export default function HomeScreen() {
             seenIds={seenIds}
             onClose={() => setViewerIndex(null)}
             onSeen={markSeen}
+            onDelete={(storyId) =>
+              setStories((prev) => prev.filter((s) => s.id !== storyId))
+            }
           />
         )}
       </Modal>

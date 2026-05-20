@@ -25,7 +25,7 @@ import { theme } from '../theme';
 import { uploadPostMedia, createPostInFirestore } from '../services/postsService';
 import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem, UserTag, PhotoTag } from '../types';
 import { db } from '../firebase';
-import { collection, query, where, getDocs, getDoc, doc, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, limit } from 'firebase/firestore';
 import GlassCard from '../components/GlassCard';
 import { useUser } from '../context/UserContext';
 import { scheduleLocalNotification, scheduleDelayedPostNotification } from '../utils/notifications';

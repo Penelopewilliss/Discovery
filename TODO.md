@@ -1,36 +1,15 @@
 # Discovery App — To-Do List
 
-## Auth & User
-- [ ] **ProfileScreen — show real user data** (name, avatar, username, bio — currently uses hardcoded `mockUser`)
-- [ ] **ProfileSetupScreen — save profile doc to Firestore** after signup (so the fallback minimal user gets replaced)
-- [ ] **Avatar upload** — wire the image picker in ProfileScreen to Firebase Storage + update Firestore user doc
-- [ ] **Google Sign-In** (later — requires `expo-auth-session` + OAuth setup)
-
-## Screens Still on Mock Data
-- [ ] **MessagesScreen** — replace `mockConversations` with real Firestore conversations/DMs
-- [ ] **SearchScreen** — replace `mockPosts` / `mockPlaces` / `mockUser` with real Firestore queries
-- [ ] **GroupsScreen** — replace `mockGroups` / `addGroup` / `toggleJoinGroup` with Firestore
-- [ ] **ChatScreen** — replace `getMessages` / `sendMessage` / `toggleLocationSharing` with real Firestore
-
-## Components Still on Mock Data
-- [ ] **PostCard** — `toggleFollowUser` / `isFollowing` still from mockData (follow system not in Firestore)
-- [ ] **PlaceCard** — `toggleFollowPlace` still from mockData
-- [ ] **GroupCard** — `toggleJoinGroup` still from mockData
-- [ ] **LiveTripSummarySheet** — `addPost` still from mockData (should use `createPostInFirestore`)
-
-## Features
-- [ ] **Follow system** — store following/followers in Firestore, wire PostCard + PlaceCard
-- [ ] **Push notifications** — `src/utils/notifications.ts` exists but not fully wired
-- [ ] **Feed filtering** — currently loads last 40 posts globally; should filter by followed users
-- [ ] **Profile stats** — followers/following counts should come from Firestore, not mock numbers
-
-## Cleanup
-- [ ] **CreatePostScreen** — remove unused `import { addPost, mockPlaces }` from mockData
-- [ ] **Remove `mockUser` dependency** from ProfileScreen and SearchScreen entirely once real data is wired
+## Optional / Future
+- [ ] **Google Sign-In** — requires `expo-auth-session` + OAuth setup in Firebase Console
 
 ## Completed ✅
 - [x] HomeScreen Firestore real-time feed
 - [x] PostCard — like, save, react, comment all wired to Firestore
+- [x] PostCard — follow/unfollow wired to Firestore (`follows` collection)
+- [x] PlaceCard — follow/unfollow wired to Firestore
+- [x] GroupCard — join/leave/request wired to Firestore
+- [x] LiveTripSummarySheet — trip sharing uses `createPostInFirestore`
 - [x] Firebase Auth persistence (AsyncStorage)
 - [x] Firestore security rules deployed
 - [x] Storage security rules deployed
@@ -41,3 +20,19 @@
 - [x] Trip sharing wired to Firestore feed
 - [x] Auth flow fix — Firebase-driven loading state, no more "Not logged in" on post
 - [x] Email/Password sign-in enabled in Firebase Console
+- [x] ProfileScreen — shows real user data (name, avatar, username, bio from UserContext/Firestore)
+- [x] ProfileSetupScreen — saves profile doc to Firestore on signup
+- [x] Avatar upload — wired to Firebase Storage in both ProfileScreen and ProfileSetupScreen
+- [x] Cover photo upload — wired to Firebase Storage in ProfileScreen
+- [x] MessagesScreen — real-time Firestore conversations with unread badge counts
+- [x] ChatScreen — real-time Firestore messages; send increments recipient's unread count
+- [x] GroupsScreen — real-time Firestore groups with join/leave/request/create
+- [x] SearchScreen — users and posts from Firestore, places from Foursquare API
+- [x] Follow system — `follows` collection in Firestore; PostCard, PlaceCard wired
+- [x] Friends system — `friends` collection; send/accept/decline requests; OtherUserProfile wired
+- [x] Push notifications — `registerForPushNotifications` called on login, token saved to Firestore
+- [x] Feed filtering — `listenToFeed` filters posts by followed users (falls back to global)
+- [x] Profile stats — follower/following counts from Firestore `follows` collection
+- [x] Group Trips — create, pin stops, add photos, all wired to Firestore subcollections
+- [x] Stories — create, view, expire (18 h) wired to Firestore `stories` collection
+- [x] CreatePostScreen — no mock data; all imports are live Firebase/Foursquare

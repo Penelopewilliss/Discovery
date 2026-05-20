@@ -19,7 +19,7 @@ import { Conversation, ChatMessage } from '../types';
 import { auth, db } from '../firebase';
 import {
   collection, addDoc, query, orderBy, onSnapshot,
-  doc, updateDoc, serverTimestamp, Timestamp,
+  doc, updateDoc, serverTimestamp, Timestamp, increment,
 } from 'firebase/firestore';
 import { useUser } from '../context/UserContext';
 import { RootStackParamList } from '../navigation/types';
@@ -85,11 +85,17 @@ export default function ChatScreen() {
       text,
       createdAt: serverTimestamp(),
     });
-    // Update conversation metadata
-    await updateDoc(doc(db, 'conversations', conversation.id), {
-      lastMessage: text,
-      lastMessageAt: serverTimestamp(),
-    }).catch(() => {});
+    // Update conversation metadata and increment unread count for other participant(s)
+    const convRef = doc(db, 'conversations', conversation.id);
+    const baseUpdate = { lastMessage: text, lastMessageAt: serverTimestamp() };
+    if (conversation.type === 'dm' && conversation.otherUserId) {
+      await updateDoc(convRef, {
+        ...baseUpdate,
+        [`unreadCounts.${conversation.otherUserId}`]: increment(1),
+      }).catch(() => {});
+    } else {
+      await updateDoc(convRef, baseUpdate).catch(() => {});
+    }
   };
 
   const handleToggleLocation = async () => {
