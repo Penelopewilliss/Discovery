@@ -402,8 +402,46 @@ export default function PostCard({ post, onUpdate, onDelete, onArchive }: PostCa
         )}
       </View>
 
-      {/* Travel Map Share Card */}
-      {post.mapShare ? (
+      {/* Gem Hunt Share Card */}
+      {post.gemHuntShare ? (
+        <LinearGradient
+          colors={['#083344', '#0f766e', '#f59e0b']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gemHuntBanner}
+        >
+          <View style={styles.gemHuntTopRow}>
+            <View style={styles.gemHuntIcon}>
+              <Text style={styles.gemHuntIconText}>◆</Text>
+            </View>
+            <View style={styles.gemHuntBadge}>
+              <Text style={styles.gemHuntBadgeText}>{post.gemHuntShare.xp} XP</Text>
+            </View>
+          </View>
+          <Text style={styles.gemHuntKicker}>GEM HUNT COMPLETED</Text>
+          <Text style={styles.gemHuntTitle} numberOfLines={2}>
+            {post.gemHuntShare.title}
+          </Text>
+          <View style={styles.gemHuntMetaRow}>
+            <Text style={styles.gemHuntMeta}>{post.gemHuntShare.category}</Text>
+            <Text style={styles.gemHuntDot}>•</Text>
+            <Text style={styles.gemHuntMeta}>{post.gemHuntShare.difficulty}</Text>
+            <Text style={styles.gemHuntDot}>•</Text>
+            <Text style={styles.gemHuntMeta}>{post.destination || post.locationArea || 'HiddenGems'}</Text>
+          </View>
+          {post.mediaItems?.[0]?.type === 'photo' && post.mediaItems[0].uri ? (
+            <Image source={{ uri: post.mediaItems[0].uri }} style={styles.gemHuntProofImage} resizeMode="cover" />
+          ) : null}
+          {post.gemHuntShare.proofNote ? (
+            <Text style={styles.gemHuntNote} numberOfLines={3}>
+              "{post.gemHuntShare.proofNote}"
+            </Text>
+          ) : null}
+          <Text style={styles.gemHuntWatermark}>HiddenGems · Gem Hunts</Text>
+        </LinearGradient>
+      ) : (
+      /* Travel Map Share Card */
+      post.mapShare ? (
         <LinearGradient
           colors={['#0f2027', '#203a43', '#2c5364']}
           start={{ x: 0, y: 0 }}
@@ -595,6 +633,7 @@ export default function PostCard({ post, onUpdate, onDelete, onArchive }: PostCa
       /* end tripShare/image ternary */
       )
       /* end mapShare ternary */
+      )
       }
       {post.tripShare?.mapIncluded && (
         <View style={styles.tripMapStrip}>
@@ -915,6 +954,64 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 300,
     position: 'relative',
+  },
+  gemHuntBanner: {
+    borderRadius: 0,
+    padding: 22,
+    minHeight: 210,
+    overflow: 'hidden',
+  },
+  gemHuntTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  gemHuntIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.26)',
+  },
+  gemHuntIconText: { color: '#FDE68A', fontSize: 24, fontWeight: '900' },
+  gemHuntBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  gemHuntBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  gemHuntKicker: { color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
+  gemHuntTitle: { color: '#fff', fontSize: 24, lineHeight: 29, fontWeight: '900', marginTop: 6 },
+  gemHuntMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 10 },
+  gemHuntMeta: { color: 'rgba(255,255,255,0.86)', fontSize: 13, fontWeight: '700', textTransform: 'capitalize' },
+  gemHuntDot: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
+  gemHuntProofImage: {
+    width: '100%',
+    height: 130,
+    borderRadius: 8,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  gemHuntNote: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 14,
+  },
+  gemHuntWatermark: {
+    color: 'rgba(255,255,255,0.46)',
+    fontSize: 11,
+    fontStyle: 'italic',
+    textAlign: 'right',
+    marginTop: 16,
   },
   // Trip card visual
   tripCardBanner: {

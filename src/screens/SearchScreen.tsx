@@ -42,6 +42,7 @@ const { width } = Dimensions.get('window');
 
 // Build searchable users from Firestore (populated at runtime)
 const TRENDING_TAGS = ['hidden gem', 'beach', 'food', 'city', 'nature', 'adventure', 'budget', 'luxury'];
+const VIBE_KEYWORDS = ['quiet','local','romantic','adventurous','budget','family','foodie','party','offbeat','nature','safety','hidden gem','photography','relaxation'];
 
 type Tab = 'All' | 'People' | 'Places' | 'Posts';
 const TABS: Tab[] = ['All', 'People', 'Places', 'Posts'];
@@ -155,14 +156,16 @@ export default function SearchScreen() {
 
   const filteredPosts = useMemo(() => {
     if (!q) return [];
-    const matched = allPosts.filter(
-      (p) =>
-        p.caption.toLowerCase().includes(q) ||
-        p.destination?.toLowerCase().includes(q) ||
-        p.locationArea?.toLowerCase().includes(q) ||
-        p.username.toLowerCase().includes(q) ||
-        p.tags.some((t) => t.toLowerCase().includes(q))
-    );
+    // Vibe-based fallback: if query contains a vibe keyword, prefer posts with matching vibeTags
+    const foundVibes = VIBE_KEYWORDS.filter((v) => q.includes(v));
+    const matched = allPosts.filter((p) => {
+      const textMatch = p.caption.toLowerCase().includes(q) || p.destination?.toLowerCase().includes(q) || p.locationArea?.toLowerCase().includes(q) || p.username.toLowerCase().includes(q) || p.tags.some((t) => t.toLowerCase().includes(q));
+      if (foundVibes.length > 0) {
+        // Prefer explicit vibeTags if available
+        if (p.vibeTags && p.vibeTags.some((vt) => foundVibes.includes(vt))) return true;
+      }
+      return textMatch;
+    });
     if (sortOrder === 'popular') {
       return [...matched].sort((a, b) => b.likes - a.likes);
     }

@@ -32,6 +32,26 @@ export type PostDelay =
   | 'after leaving'
   | 'after trip';
 
+export type VisibilityStatus = 'draft' | 'scheduled' | 'published';
+
+export type LocationPrivacy = 'exact' | 'approximate' | 'hidden' | 'delayed';
+
+export type VibeTag =
+  | 'quiet'
+  | 'local'
+  | 'romantic'
+  | 'adventurous'
+  | 'budget'
+  | 'family'
+  | 'foodie'
+  | 'party'
+  | 'offbeat'
+  | 'nature'
+  | 'safety'
+  | 'hidden gem'
+  | 'photography'
+  | 'relaxation';
+
 export type PrivacyLevel = 'public' | 'followers' | 'group' | 'private';
 
 export type TravelMood =
@@ -102,14 +122,22 @@ export interface Post {
   locationArea: string;
   destination: string;
   tags: TravelTag[];
+  vibeTags?: VibeTag[]; // semantic "vibe" tags for vibe-based search
   mood: TravelMood[];
   likes: number;
   comments: number;
   delay: PostDelay;
+  scheduledAt?: string | null; // ISO timestamp for scheduled publish
+  visibilityStatus?: VisibilityStatus;
   privacy: PrivacyLevel;
-  hideExactLocation: boolean;
-  blurLocation: boolean;
-  hideStayLocation: boolean;
+  // New, unified location privacy model. Backwards-compatible helpers exist in services.
+  locationPrivacy?: LocationPrivacy;
+  approximateLocation?: { lat: number; lon: number; radiusKm?: number } | null; // for 'approximate'
+  hideExactLocation?: boolean;
+  blurLocation?: boolean;
+  hideStayLocation?: boolean;
+  // Offline sync status for drafts/posts created locally
+  syncStatus?: 'local' | 'syncing' | 'synced' | 'failed';
   createdAt: string;
   liked: boolean;
   saved: boolean;
@@ -133,7 +161,21 @@ export interface Post {
     placesCount: number;
     topCountries: string[];  // e.g. ["🇫🇷 France", "🇯🇵 Japan"]
   };
+  gemHuntShare?: {
+    huntId: string;
+    title: string;
+    category: string;
+    difficulty: 'easy' | 'medium' | 'hard';
+    xp: number;
+    proofNote?: string;
+    completedAt: string;
+  };
   archived?: boolean;
+  // Trust / moderation metadata
+  verifiedLocal?: boolean;
+  trustedTravelerScore?: number; // 0..100
+  usefulTipsCount?: number;
+  reportCount?: number;
 }
 
 export interface Place {

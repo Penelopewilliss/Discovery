@@ -2,6 +2,7 @@
 // Copy .env.example → .env and fill in your keys before running expo prebuild.
 export default ({ config }) => ({
   ...config,
+  scheme: ['hiddengems', 'com.travlora.app'],
   icon: './assets/icon.png',
   splash: {
     image: './assets/splash.png',

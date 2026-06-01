@@ -22,8 +22,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { theme } from '../theme';
-import { uploadPostMedia, createPostInFirestore } from '../services/postsService';
-import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem, UserTag, PhotoTag } from '../types';
+import { uploadPostMedia, createPostInFirestore, createOrSchedulePostInFirestore } from '../services/postsService';
+import { saveDraft as saveDraftLocal } from '../services/draftService';
+import { Post, PostDelay, PrivacyLevel, TravelMood, TravelTag, MediaItem, UserTag, PhotoTag, VibeTag } from '../types';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, limit } from 'firebase/firestore';
 import GlassCard from '../components/GlassCard';
@@ -47,6 +48,8 @@ const PRIVACY_OPTIONS: { label: string; value: PrivacyLevel }[] = [
   { label: '🔒 Private Group Only', value: 'group' },
 ];
 
+const VIBE_OPTIONS: VibeTag[] = ['quiet','local','romantic','adventurous','budget','family','foodie','party','offbeat','nature','safety','hidden gem','photography','relaxation'];
+
 let postCounter = 100;
 
 export default function CreatePostScreen() {
@@ -55,6 +58,7 @@ export default function CreatePostScreen() {
   const [destination, setDestination] = useState('');
   const [selectedPlaceFsq, setSelectedPlaceFsq] = useState<FsqPlace | null>(null);
   const [selectedTags, setSelectedTags] = useState<TravelTag[]>([]);
+  const [vibeTags, setVibeTags] = useState<VibeTag[]>([]);
   const [selectedMood, setSelectedMood] = useState<TravelMood[]>(['wanderlust']);
   const [delay, setDelay] = useState<PostDelay>('24h');
   const [privacy, setPrivacy] = useState<PrivacyLevel>('public');
@@ -244,7 +248,48 @@ export default function CreatePostScreen() {
     );
   };
 
+  const toggleVibe = (v: VibeTag) => {
+    setVibeTags((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]);
+  };
+
   const [posting, setPosting] = useState(false);
+
+  // Auto-save draft when leaving composer (unmount)
+  useEffect(() => {
+    return () => {
+      // Save a lightweight draft if there's any content
+      if (caption.trim() || mediaItems.length > 0 || destination.trim()) {
+        const draft = {
+          id: `draft_${Date.now()}`,
+          userId: user?.id ?? 'anon',
+          username: user?.username ?? 'traveler',
+          userAvatar: user?.avatarUri ?? null,
+          imageUrl: mediaItems[0]?.uri ?? '',
+          mediaItems,
+          caption,
+          locationArea: destination,
+          destination,
+          tags: selectedTags,
+          mood: selectedMood,
+          likes: 0,
+          comments: 0,
+          delay,
+          privacy,
+          hideExactLocation: hideExact,
+          blurLocation,
+          hideStayLocation: hideStay,
+          createdAt: new Date().toISOString(),
+          reactions: {},
+          userReaction: null,
+          reactionsEnabled,
+          taggedUsers,
+          photoTags,
+          syncStatus: 'local',
+        } as any;
+        saveDraftLocal(draft).catch(() => {});
+      }
+    };
+  }, [caption, mediaItems, destination, selectedTags, selectedMood, delay, privacy, hideExact, blurLocation, hideStay, reactionsEnabled, taggedUsers, photoTags, user]);
 
   const handlePost = async () => {
     if (!caption.trim()) {
@@ -283,6 +328,21 @@ export default function CreatePostScreen() {
         }
       }
 
+      // Determine scheduledAt and visibility
+      const delayMap: Record<PostDelay, number> = {
+        now: 0, '6h': 6 * 60 * 60, '24h': 24 * 60 * 60, '48h': 48 * 60 * 60,
+        'after leaving': 12 * 60 * 60, 'after trip': 72 * 60 * 60,
+      };
+      const scheduledAt = delay === 'now' ? null : new Date(Date.now() + (delayMap[delay] * 1000)).toISOString();
+      const visibilityStatus = delay === 'now' ? 'published' : 'scheduled';
+
+      // Map privacy toggles to unified locationPrivacy
+      let locationPrivacy = 'exact';
+      if (hideExact) locationPrivacy = 'hidden';
+      else if (blurLocation) locationPrivacy = 'approximate';
+
+      const approximateLocation = selectedPlaceFsq?.geocodes?.main ? { lat: selectedPlaceFsq.geocodes.main.latitude, lon: selectedPlaceFsq.geocodes.main.longitude, radiusKm: 5 } : null;
+
       const postData = {
         id: postId,
         userId: user.id,
@@ -294,6 +354,7 @@ export default function CreatePostScreen() {
         locationArea: destination,
         destination,
         tags: selectedTags,
+        vibeTags,
         mood: selectedMood,
         likes: 0,
         comments: 0,
@@ -302,6 +363,10 @@ export default function CreatePostScreen() {
         hideExactLocation: hideExact,
         blurLocation,
         hideStayLocation: hideStay,
+        scheduledAt,
+        visibilityStatus,
+        locationPrivacy,
+        approximateLocation,
         createdAt: new Date().toISOString(),
         reactions: {},
         userReaction: null,
@@ -310,7 +375,8 @@ export default function CreatePostScreen() {
         photoTags,
       };
 
-      await createPostInFirestore(postData);
+      // Use createOrSchedulePostInFirestore to persist scheduling metadata.
+      await createOrSchedulePostInFirestore(postData as any);
 
       // Auto-mark the tagged place as visited
       if (selectedPlaceFsq) {
@@ -590,6 +656,34 @@ export default function CreatePostScreen() {
                   ) : (
                     <View style={styles.chipInactive}>
                       <Text style={styles.chipText}>{mood}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Vibe Tags (semantic) */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Vibe</Text>
+          <View style={styles.chipGroup}>
+            {VIBE_OPTIONS.map((v) => {
+              const active = vibeTags.includes(v);
+              return (
+                <TouchableOpacity key={v} onPress={() => toggleVibe(v)}>
+                  {active ? (
+                    <LinearGradient
+                      colors={theme.colors.gradientPrimary as [string, string]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.chip}
+                    >
+                      <Text style={styles.chipTextActive}>{v}</Text>
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.chipInactive}>
+                      <Text style={styles.chipText}>{v}</Text>
                     </View>
                   )}
                 </TouchableOpacity>

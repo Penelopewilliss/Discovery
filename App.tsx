@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -19,10 +19,12 @@ import MessagesScreen from './src/screens/MessagesScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import PassportScreen from './src/screens/PassportScreen';
+import GemHuntsScreen from './src/screens/GemHuntsScreen';
 import OtherUserProfileScreen from './src/screens/OtherUserProfileScreen';
+import SocialMapScreen from './src/screens/SocialMapScreen';
+import PassiveContentScreen from './src/screens/PassiveContentScreen';
 import { UserProvider, useUser } from './src/context/UserContext';
 
-const SCREEN_W = Dimensions.get('window').width;
 import { AuthStackParamList, RootStackParamList } from './src/navigation/types';
 
 // Configure how notifications appear when app is in foreground
@@ -34,6 +36,7 @@ const RootStack = createNativeStackNavigator<RootStackParamList>();
 const TABS = [
   { name: 'Feed', emoji: '🏠' },
   { name: 'Passport', emoji: '🛂' },
+  { name: 'Gem Hunts', emoji: '💎' },
   { name: 'Groups', emoji: '👥' },
   { name: 'Search', emoji: '🔎' },
   { name: 'Messages', emoji: '💬' },
@@ -69,6 +72,7 @@ function MainScreen({ name }: { name: string }) {
     case 'Messages': return <MessagesScreen />;
     case 'Search': return <SearchScreen />;
     case 'Passport': return <PassportScreen />;
+    case 'Gem Hunts': return <GemHuntsScreen />;
     case 'Profile': return <ProfileScreen />;
     default: return <HomeScreen />;
   }
@@ -152,6 +156,8 @@ function AppNavigator() {
       {isLoggedIn ? (
         <RootStack.Navigator screenOptions={{ headerShown: false }}>
           <RootStack.Screen name="MainApp" component={MainApp} />
+          <RootStack.Screen name="SocialMap" component={SocialMapScreen} />
+          <RootStack.Screen name="PassiveContent" component={PassiveContentScreen} />
           <RootStack.Screen
             name="Chat"
             component={ChatScreen}
@@ -192,7 +198,7 @@ const styles = StyleSheet.create({
     paddingBottom: 1,
   },
   tabs: { flexDirection: 'row', paddingBottom: 8, paddingHorizontal: 4 },
-  tab: { width: Math.floor(SCREEN_W / 6), alignItems: 'center', paddingVertical: 4, position: 'relative' },
+  tab: { minWidth: 68, alignItems: 'center', paddingVertical: 4, position: 'relative' },
   tabEmoji: { fontSize: 18 },
   tabEmojiDim: { opacity: 0.45 },
   tabLabel: { fontSize: 8, color: theme.colors.textMuted, fontWeight: '500', marginTop: 2 },

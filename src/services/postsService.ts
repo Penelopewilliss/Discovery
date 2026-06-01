@@ -115,6 +115,28 @@ export async function createPostInFirestore(post: Omit<Post, 'liked' | 'saved'>)
   return docRef.id;
 }
 
+/**
+ * Create a post that may be scheduled. Stores scheduling/visibility/location privacy fields.
+ * Note: actual publishing of scheduled posts (changing visibility to 'published') should be
+ * handled by a backend worker / Cloud Function. This helper persists the scheduling metadata.
+ */
+export async function createOrSchedulePostInFirestore(post: Omit<Post, 'liked' | 'saved'> & { visibilityStatus?: string; scheduledAt?: string | null; locationPrivacy?: string; approximateLocation?: any; }): Promise<string> {
+  const payload: any = {
+    ...post,
+    visibilityStatus: post.visibilityStatus ?? 'published',
+    scheduledAt: post.scheduledAt ? new Date(post.scheduledAt) : null,
+    locationPrivacy: post.locationPrivacy ?? post.hideExactLocation ? 'hidden' : 'exact',
+    approximateLocation: post.approximateLocation ?? null,
+    createdAt: serverTimestamp(),
+    likesCount: post.likes ?? 0,
+    commentsCount: post.comments ?? 0,
+    syncStatus: post.syncStatus ?? 'synced',
+  };
+
+  const docRef = await addDoc(collection(db, 'posts'), payload);
+  return docRef.id;
+}
+
 export async function deletePostFromFirestore(postId: string): Promise<void> {
   await deleteDoc(doc(db, 'posts', postId));
 }
@@ -259,6 +281,7 @@ export function listenToFeed(
         photoTags: data.photoTags ?? [],
         tripShare: data.tripShare ?? undefined,
         mapShare: data.mapShare ?? undefined,
+        gemHuntShare: data.gemHuntShare ?? undefined,
         archived: data.archived ?? false,
       } as Post;
     });
@@ -482,6 +505,31 @@ export async function createGroupTrip(groupId: string, name: string, creatorId: 
     entryCount: 0,
   });
   return ref.id;
+}
+
+// ─── Reporting / Moderation ─────────────────────────────────────────────────
+
+export async function reportPost(postId: string, reporterId: string, reason: string): Promise<void> {
+  await addDoc(collection(db, 'reports'), {
+    type: 'post',
+    targetId: postId,
+    reporterId,
+    reason,
+    createdAt: serverTimestamp(),
+  });
+  // Increment report count on post for basic trust metrics
+  try { await updateDoc(doc(db, 'posts', postId), { reportCount: increment(1) }); } catch (_) {}
+}
+
+export async function reportUser(userId: string, reporterId: string, reason: string): Promise<void> {
+  await addDoc(collection(db, 'reports'), {
+    type: 'user',
+    targetId: userId,
+    reporterId,
+    reason,
+    createdAt: serverTimestamp(),
+  });
+  try { await updateDoc(doc(db, 'users', userId), { reportCount: increment(1) }); } catch (_) {}
 }
 
 export function listenGroupTrips(
